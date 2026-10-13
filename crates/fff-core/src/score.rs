@@ -1525,7 +1525,7 @@ mod tests {
         let mut cache = None;
         for typed in [
             "omnibox_view_controller_1",
-            "omnibx_veiw",
+            "omnibx_vewi",
             "renderframe_test",
             "rendr",
             "browser_util_frame_99",
