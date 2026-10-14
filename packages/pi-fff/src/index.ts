@@ -89,10 +89,18 @@ function toolNameList(names: ToolNames): string[] {
 // Cursor store — simple bounded Map for pagination cursors
 // ---------------------------------------------------------------------------
 
-const cursorCache = new Map<string, GrepCursor>();
+interface ToolGrepCursor {
+  cursor: GrepCursor;
+  definitionsOnly: boolean;
+  foundDefinitions: boolean;
+  mode?: GrepMode;
+  query?: string;
+}
+
+const cursorCache = new Map<string, ToolGrepCursor>();
 let cursorCounter = 0;
 
-function storeCursor(cursor: GrepCursor): string {
+function storeCursor(cursor: ToolGrepCursor): string {
   const id = `fff_c${++cursorCounter}`;
   cursorCache.set(id, cursor);
   if (cursorCache.size > 200) {
@@ -102,7 +110,7 @@ function storeCursor(cursor: GrepCursor): string {
   return id;
 }
 
-function getCursor(id: string): GrepCursor | undefined {
+function getCursor(id: string): ToolGrepCursor | undefined {
   return cursorCache.get(id);
 }
 
@@ -954,23 +962,15 @@ export default function fffExtension(pi: ExtensionAPI) {
 
   // --- grep tool ---
 
-  const definitionModeSchema = Type.Optional(
-    Type.Union(
-      [
-        Type.Literal("off"),
-        Type.Literal("classify"),
-        Type.Literal("definition_only"),
-        Type.Literal("usage_only"),
-      ],
-      {
-        description:
-          "Return all matches, matching declarations only, or usages only. Repeat this mode with a cursor.",
-      },
-    ),
+  const definitionsOnlySchema = Type.Optional(
+    Type.Boolean({
+      description:
+        "Return matching declarations. If none are found, report that and return other matches.",
+    }),
   );
 
   const grepSchema = Type.Object({
-    classifyDefinitions: definitionModeSchema,
+    definitions_only: definitionsOnlySchema,
     pattern: Type.String({
       description: "Search pattern (literal text or regex)",
     }),
@@ -1012,7 +1012,7 @@ export default function fffExtension(pi: ExtensionAPI) {
     promptSnippet: "Grep contents",
     promptGuidelines: (names) => [
       `${names.grep}: prefer bare identifiers as patterns. Literal queries are most efficient.`,
-      `${names.grep}: use classifyDefinitions: "definition_only" to return only matching declarations.`,
+      `${names.grep}: use definitions_only: true to find declarations; if none are found, the tool returns other matches with a notice.`,
       `${names.grep}: use path for include ('src/', '*.ts') and exclude for noise ('test/,*.min.js').`,
       `${names.grep}: caseSensitive: true when you need exact case (smart-case otherwise).`,
       `${names.grep}: after 1-2 greps, read the top match instead of more greps.`,
@@ -1032,16 +1032,17 @@ export default function fffExtension(pi: ExtensionAPI) {
       // default so same-file overflow remains reachable via cursor (#825).
       const pageSize = Math.min(effectiveLimit, GREP_PAGE_SIZE_MAX);
       const context = clampContext(params.context);
-      const query = aux
-        ? aux.query
-        : buildQuery(params.path, pattern, params.exclude, activeCwd);
+      const resumed = params.cursor ? getCursor(params.cursor) : undefined;
+      let query =
+        resumed?.query ??
+        (aux ? aux.query : buildQuery(params.path, pattern, params.exclude, activeCwd));
 
       // Auto-detect: regex if the pattern has regex metacharacters AND parses
       // as a valid regex, otherwise plain literal. The fuzzy fallback below
       // only kicks in for plain mode — regex queries are intentional.
       const hasRegexSyntax = pattern !== pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-      let mode: GrepMode = hasRegexSyntax ? "regex" : "plain";
+      let mode: GrepMode = resumed?.mode ?? (hasRegexSyntax ? "regex" : "plain");
       if (mode === "regex") {
         try {
           new RegExp(pattern);
@@ -1076,21 +1077,42 @@ export default function fffExtension(pi: ExtensionAPI) {
       // (case-insensitive when pattern is all lowercase).
       const smartCase = params.caseSensitive !== true;
 
-      const grepResult = picker.grep(query, {
+      let definitionsOnly = resumed?.definitionsOnly ?? params.definitions_only ?? false;
+      const preferDefinitions = definitionsOnly;
+      const foundDefinitions = resumed?.foundDefinitions ?? false;
+      const options = {
         mode,
         smartCase,
         maxMatchesPerFile: GREP_MAX_MATCHES_PER_FILE,
         pageSize,
-        cursor: (params.cursor ? getCursor(params.cursor) : null) ?? null,
+        cursor: resumed?.cursor ?? null,
         beforeContext: context,
         afterContext: context,
-        classifyDefinitions: params.classifyDefinitions ?? "classify",
         timeBudgetMs: GREP_TIME_BUDGET_MS,
+      };
+      const grepResult = picker.grep(query, {
+        ...options,
+        classifyDefinitions: definitionsOnly ? "definition_only" : "classify",
       });
 
       if (!grepResult.ok) throw new Error(grepResult.error);
 
       let result = grepResult.value;
+      const definitionsFallback =
+        definitionsOnly &&
+        !foundDefinitions &&
+        result.items.length === 0 &&
+        !result.nextCursor;
+      if (definitionsFallback) {
+        const fallback = picker.grep(query, {
+          ...options,
+          cursor: null,
+          classifyDefinitions: "classify",
+        });
+        if (!fallback.ok) throw new Error(fallback.error);
+        result = fallback.value;
+        definitionsOnly = false;
+      }
       let fuzzyNotice: string | null = null;
 
       // if we hit the timeout do not run the fuzzy fallback
@@ -1098,7 +1120,7 @@ export default function fffExtension(pi: ExtensionAPI) {
       if (
         result.items.length === 0 &&
         !result.nextCursor &&
-        !params.cursor &&
+        (!params.cursor || definitionsFallback) &&
         mode !== "regex"
       ) {
         // When the caller pinned a specific file (path has an extension), the
@@ -1108,10 +1130,7 @@ export default function fffExtension(pi: ExtensionAPI) {
         // excluded / out-of-scope directories.
         const lastSeg = params.path?.split(/[\\/]/).pop() ?? "";
         const pathTargetsFile = /\.[a-zA-Z][a-zA-Z0-9]{0,9}$/.test(lastSeg);
-        const filtered =
-          params.classifyDefinitions === "definition_only" ||
-          params.classifyDefinitions === "usage_only";
-        const fuzzyQuery = pathTargetsFile && !filtered ? pattern : query;
+        const fuzzyQuery = pathTargetsFile && !preferDefinitions ? pattern : query;
         const fuzzy = picker.grep(fuzzyQuery, {
           mode: "fuzzy",
           smartCase,
@@ -1120,13 +1139,15 @@ export default function fffExtension(pi: ExtensionAPI) {
           cursor: null,
           beforeContext: 0,
           afterContext: 0,
-          classifyDefinitions: params.classifyDefinitions ?? "classify",
+          classifyDefinitions: definitionsOnly ? "definition_only" : "classify",
           timeBudgetMs: GREP_TIME_BUDGET_MS,
         });
 
         if (fuzzy.ok && fuzzy.value.items.length > 0) {
           fuzzyNotice = `0 exact matches. Maybe you meant this?`;
           result = fuzzy.value;
+          mode = "fuzzy";
+          query = fuzzyQuery;
         }
       }
 
@@ -1136,11 +1157,26 @@ export default function fffExtension(pi: ExtensionAPI) {
         notices.push(`Invalid regex: ${result.regexFallbackError}, used literal match`);
       }
       if (result.nextCursor) {
-        notices.push(`Continue with cursor="${storeCursor(result.nextCursor)}"`);
+        const cursor = storeCursor({
+          cursor: result.nextCursor,
+          definitionsOnly,
+          foundDefinitions:
+            foundDefinitions || (definitionsOnly && result.items.length > 0),
+          mode,
+          query,
+        });
+        notices.push(`Continue with cursor="${cursor}"`);
       }
 
       if (notices.length > 0) output += `\n\n[${notices.join(". ")}]`;
       if (fuzzyNotice) output = `[${fuzzyNotice}]\n${output}`;
+      if (definitionsFallback) {
+        const notice =
+          result.items.length > 0 || result.nextCursor
+            ? "No matching definitions found. Showing other matches:"
+            : "No matching definitions or other matches found.";
+        output = `[${notice}]\n${output}`;
+      }
 
       return {
         content: [{ type: "text", text: output }],
@@ -1320,7 +1356,7 @@ export default function fffExtension(pi: ExtensionAPI) {
 
   if (enableMultiGrep) {
     const multiGrepSchema = Type.Object({
-      classifyDefinitions: definitionModeSchema,
+      definitions_only: definitionsOnlySchema,
       patterns: Type.Array(Type.String(), {
         description:
           "Literal patterns (OR). Include snake_case/camelCase/PascalCase variants.",
@@ -1349,7 +1385,7 @@ export default function fffExtension(pi: ExtensionAPI) {
         `${names.multiGrep}: use when searching for several identifiers at once.`,
         `${names.multiGrep}: include all naming-convention variants (snake/camel/Pascal).`,
         `${names.multiGrep}: patterns are literal. Use constraints for file filters.`,
-        `${names.multiGrep}: use classifyDefinitions: "definition_only" to return only matching declarations.`,
+        `${names.multiGrep}: use definitions_only: true to find declarations; if none are found, the tool returns other matches with a notice.`,
       ],
       parameters: multiGrepSchema,
 
@@ -1363,32 +1399,66 @@ export default function fffExtension(pi: ExtensionAPI) {
         const pageSize = Math.min(effectiveLimit, GREP_PAGE_SIZE_MAX);
         const context = clampContext(params.context);
 
-        const grepResult = f.multiGrep({
+        const resumed = params.cursor ? getCursor(params.cursor) : undefined;
+        let definitionsOnly =
+          resumed?.definitionsOnly ?? params.definitions_only ?? false;
+        const foundDefinitions = resumed?.foundDefinitions ?? false;
+        const options = {
           patterns: params.patterns,
           constraints: params.constraints,
-          classifyDefinitions: params.classifyDefinitions ?? "off",
           maxMatchesPerFile: GREP_MAX_MATCHES_PER_FILE,
           pageSize,
           smartCase: true,
-          cursor: (params.cursor ? getCursor(params.cursor) : null) ?? null,
+          cursor: resumed?.cursor ?? null,
           beforeContext: context,
           afterContext: context,
+        };
+        const grepResult = f.multiGrep({
+          ...options,
+          classifyDefinitions: definitionsOnly ? "definition_only" : "off",
         });
 
         if (!grepResult.ok) throw new Error(grepResult.error);
 
-        const result = grepResult.value;
+        let result = grepResult.value;
+        const definitionsFallback =
+          definitionsOnly &&
+          !foundDefinitions &&
+          result.items.length === 0 &&
+          !result.nextCursor;
+        if (definitionsFallback) {
+          const fallback = f.multiGrep({
+            ...options,
+            cursor: null,
+            classifyDefinitions: "off",
+          });
+          if (!fallback.ok) throw new Error(fallback.error);
+          result = fallback.value;
+          definitionsOnly = false;
+        }
         let output = formatGrepOutput(result);
 
         const notices: string[] = [];
         if (result.items.length >= effectiveLimit)
           notices.push(`${effectiveLimit}+ matches (refine patterns)`);
-        if (result.nextCursor)
-          notices.push(
-            `More available. cursor="${storeCursor(result.nextCursor)}" to continue`,
-          );
+        if (result.nextCursor) {
+          const cursor = storeCursor({
+            cursor: result.nextCursor,
+            definitionsOnly,
+            foundDefinitions:
+              foundDefinitions || (definitionsOnly && result.items.length > 0),
+          });
+          notices.push(`More available. cursor="${cursor}" to continue`);
+        }
 
         if (notices.length > 0) output += `\n\n[${notices.join(". ")}]`;
+        if (definitionsFallback) {
+          const notice =
+            result.items.length > 0 || result.nextCursor
+              ? "No matching definitions found. Showing other matches:"
+              : "No matching definitions or other matches found.";
+          output = `[${notice}]\n${output}`;
+        }
 
         return {
           content: [{ type: "text", text: output }],

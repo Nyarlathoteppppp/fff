@@ -8,6 +8,7 @@ type MockFinder = {
   waitForScan: ReturnType<typeof mock>;
   mixedSearch: ReturnType<typeof mock>;
   grep: ReturnType<typeof mock>;
+  multiGrep: ReturnType<typeof mock>;
   getScanProgress: ReturnType<typeof mock>;
   destroy: ReturnType<typeof mock>;
 };
@@ -16,6 +17,7 @@ const createCalls: unknown[] = [];
 let finders: MockFinder[] = [];
 let mixedSearchImpl: ((query: string, options: unknown) => unknown) | undefined;
 let grepImpl: ((query: string, options: unknown) => unknown) | undefined;
+let multiGrepImpl: ((options: unknown) => unknown) | undefined;
 let scanProgressImpl: (() => unknown) | undefined;
 
 function createMockFinder(): MockFinder {
@@ -60,6 +62,10 @@ function createMockFinder(): MockFinder {
           nextCursor: null,
         },
       };
+    }),
+    multiGrep: mock((options: unknown) => {
+      if (multiGrepImpl) return multiGrepImpl(options);
+      return grepPage();
     }),
     destroy: mock(function (this: MockFinder) {
       this.isDestroyed = true;
@@ -228,6 +234,7 @@ function abortOptions() {
 const CONFIG_ENV_KEYS = [
   "PI_CODING_AGENT_DIR",
   "PI_FFF_MODE",
+  "PI_FFF_MULTIGREP",
   "FFF_FRECENCY_DB",
   "FFF_HISTORY_DB",
   "FFF_ENABLE_ROOT_SCAN",
@@ -247,6 +254,7 @@ beforeEach(() => {
   finders = [];
   mixedSearchImpl = undefined;
   grepImpl = undefined;
+  multiGrepImpl = undefined;
   scanProgressImpl = undefined;
 
   for (const key of CONFIG_ENV_KEYS) delete process.env[key];
@@ -995,3 +1003,202 @@ describe("ffgrep per-file cap (#825)", () => {
     expect(captured.maxMatchesPerFile).toBeGreaterThan(captured.pageSize);
   });
 });
+
+for (const name of ["ffgrep", "fff-multi-grep"]) {
+  describe(`${name} definitions_only`, () => {
+    const normal = name === "ffgrep" ? "classify" : "off";
+    const params =
+      name === "ffgrep"
+        ? { pattern: "Needle", path: "src/" }
+        : { patterns: ["Needle"], constraints: "src/" };
+
+    async function prepare(impl: (options: any) => unknown) {
+      process.env.PI_FFF_MULTIGREP = "1";
+      grepImpl = (_query, options) => impl(options);
+      multiGrepImpl = impl;
+      const setup = await start("tools-and-ui");
+      const tool = setup.pi.registerTool.mock.calls
+        .map(([tool]) => tool)
+        .find((tool) => tool.name === name);
+      expect(tool).toBeDefined();
+      return { setup, tool };
+    }
+
+    test("exposes an optional boolean and returns definitions without retrying", async () => {
+      const calls: any[] = [];
+      const { setup, tool } = await prepare((options) => {
+        calls.push(options);
+        return grepPage("fn Needle() {}", null, true);
+      });
+      expect(tool.parameters.properties.definitions_only).toMatchObject({
+        type: "boolean",
+        optional: true,
+      });
+      expect(tool.parameters.properties.classifyDefinitions).toBeUndefined();
+      const result = await tool.execute(
+        "defs",
+        { ...params, definitions_only: true },
+        abortOptions().signal,
+      );
+      expect(calls).toHaveLength(1);
+      expect(calls[0].classifyDefinitions).toBe("definition_only");
+      expect(result.content[0].text).toContain("fn Needle");
+      expect(result.content[0].text).not.toContain("No matching definitions");
+      await shutdown(setup);
+    });
+
+    test("falls back with a notice and preserves the ordinary cursor", async () => {
+      const calls: any[] = [];
+      const next = { _offset: 7 };
+      const { setup, tool } = await prepare((options) => {
+        calls.push(options);
+        if (calls.length === 1) return grepPage();
+        return grepPage("Needle();", calls.length === 2 ? next : null);
+      });
+      const first = await tool.execute(
+        "fallback",
+        { ...params, definitions_only: true },
+        abortOptions().signal,
+      );
+      expect(first.content[0].text).toContain(
+        "No matching definitions found. Showing other matches:",
+      );
+      expect(first.content[0].text).toContain("Needle();");
+      const cursor = first.content[0].text.match(/cursor="([^"]+)"/)[1];
+      const second = await tool.execute(
+        "next",
+        { ...params, definitions_only: true, cursor },
+        abortOptions().signal,
+      );
+      expect(calls.map((call) => call.classifyDefinitions)).toEqual([
+        "definition_only",
+        normal,
+        normal,
+      ]);
+      expect(calls[2].cursor).toEqual(next);
+      expect(second.content[0].text).not.toContain("No matching definitions");
+      await shutdown(setup);
+    });
+
+    test("waits for a complete empty definition search before falling back", async () => {
+      const calls: any[] = [];
+      const { setup, tool } = await prepare((options) => {
+        calls.push(options);
+        if (calls.length === 1) return grepPage(undefined, { _offset: 3 });
+        return calls.length === 2 ? grepPage() : grepPage("Needle();");
+      });
+      const first = await tool.execute(
+        "partial",
+        { ...params, definitions_only: true },
+        abortOptions().signal,
+      );
+      expect(calls).toHaveLength(1);
+      expect(first.content[0].text).not.toContain("No matching definitions");
+      const cursor = first.content[0].text.match(/cursor="([^"]+)"/)[1];
+      const second = await tool.execute(
+        "finish",
+        { ...params, cursor },
+        abortOptions().signal,
+      );
+      expect(calls.map((call) => call.classifyDefinitions)).toEqual([
+        "definition_only",
+        "definition_only",
+        normal,
+      ]);
+      expect(calls[2].cursor).toBeNull();
+      expect(second.content[0].text).toContain("No matching definitions found");
+      await shutdown(setup);
+    });
+
+    test("does not fall back at the end of previously returned definitions", async () => {
+      const calls: any[] = [];
+      const { setup, tool } = await prepare((options) => {
+        calls.push(options);
+        return calls.length === 1
+          ? grepPage("fn Needle() {}", { _offset: 3 }, true)
+          : grepPage();
+      });
+      const first = await tool.execute(
+        "defs",
+        { ...params, definitions_only: true },
+        abortOptions().signal,
+      );
+      const cursor = first.content[0].text.match(/cursor="([^"]+)"/)[1];
+      const second = await tool.execute(
+        "last",
+        { ...params, cursor },
+        abortOptions().signal,
+      );
+      expect(calls.map((call) => call.classifyDefinitions)).toEqual([
+        "definition_only",
+        "definition_only",
+      ]);
+      expect(second.content[0].text).not.toContain("No matching definitions");
+      await shutdown(setup);
+    });
+
+    test("keeps the ordinary behavior when the flag is omitted", async () => {
+      const calls: any[] = [];
+      const { setup, tool } = await prepare((options) => {
+        calls.push(options);
+        return grepPage("Needle();");
+      });
+      await tool.execute("ordinary", params, abortOptions().signal);
+      expect(calls).toHaveLength(1);
+      expect(calls[0].classifyDefinitions).toBe(normal);
+      await shutdown(setup);
+    });
+  });
+}
+
+test("definition fallback keeps fuzzy query and mode in the cursor", async () => {
+  const calls: { query: string; options: any }[] = [];
+  grepImpl = (query, options) => {
+    calls.push({ query, options });
+    if (calls.length <= 2) return grepPage();
+    return grepPage("Needle();", calls.length === 3 ? { _offset: 9 } : null);
+  };
+  const setup = await start("tools-and-ui");
+  const tool = setup.pi.registerTool.mock.calls
+    .map(([tool]) => tool)
+    .find((tool) => tool.name === "ffgrep");
+  const params = { pattern: "Nedle", path: "src/", definitions_only: true };
+  const first = await tool.execute("typo", params, abortOptions().signal);
+  const cursor = first.content[0].text.match(/cursor="([^"]+)"/)[1];
+  await tool.execute("next", { ...params, cursor }, abortOptions().signal);
+  expect(calls.map((call) => call.options.mode)).toEqual([
+    "plain",
+    "plain",
+    "fuzzy",
+    "fuzzy",
+  ]);
+  expect(calls[3].query).toBe(calls[2].query);
+  expect(calls[3].options.classifyDefinitions).toBe("classify");
+  await shutdown(setup);
+});
+
+function grepPage(line?: string, nextCursor: unknown = null, isDefinition = false) {
+  const items = line
+    ? [
+        {
+          relativePath: "src/hit.rs",
+          fileName: "hit.rs",
+          lineNumber: 1,
+          lineContent: line,
+          isDefinition,
+          totalFrecencyScore: 0,
+        },
+      ]
+    : [];
+  return {
+    ok: true,
+    value: {
+      items,
+      totalMatched: items.length,
+      totalFiles: 1,
+      totalFilesSearched: 1,
+      filteredFileCount: 1,
+      nextCursor,
+    },
+  };
+}

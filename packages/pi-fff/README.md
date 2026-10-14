@@ -81,12 +81,13 @@ This extension registers FFF-powered tools (`fffind`, `ffgrep`, `fff-multi-grep`
 
 ### `ffgrep`
 
-Set `classifyDefinitions: "definition_only"` to return only matching declarations. Other modes are `"classify"` (the grep default), `"usage_only"`, and `"off"`. The optional `fff-multi-grep` tool accepts the same setting and defaults to `"off"`. Repeat the mode when continuing with a cursor. The mode also applies to fuzzy retries.
+Set `definitions_only: true` to search for matching declarations. If the completed search finds none, the tool reports that and returns ordinary matches. Cursors remember the search or fallback state. The optional `fff-multi-grep` tool accepts the same flag. Omitting the flag keeps ordinary search behavior.
 
 Search file contents. Smart case, plain text by default, regex optional.
 
 Parameters:
 - `pattern` — search text or regex
+- `definitions_only` — prefer declarations; fall back to ordinary matches with a notice when none exist
 - `path` — directory/file constraint (e.g. `src/`, `*.ts`)
 - `ignoreCase` — force case-insensitive
 - `literal` — treat as literal string (default: true)
@@ -109,6 +110,7 @@ OR-logic multi-pattern content search. SIMD-accelerated Aho-Corasick.
 
 Parameters:
 - `patterns` — array of literal patterns (OR logic)
+- `definitions_only` — prefer declarations with the same fallback behavior
 - `constraints` — file constraints (e.g. `*.{ts,tsx} !test/`)
 - `context` — context lines
 - `limit` — max matches (default: 100)

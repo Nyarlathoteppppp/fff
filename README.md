@@ -493,7 +493,7 @@ require('fff').setup({
 
 Set `grep.classify_definitions = true` to search matching definition lines first across pages, grouped under their file names, then show the remaining matches. It defaults to `false`, which skips definition classification and grouping. A **Definitions** divider separates the sections when both are on the same page. With a bottom prompt, the order reverses so definitions stay nearest the prompt. Files with both kinds of matches appear in both sections, with each match shown once.
 
-Each grep call uses one `classify_definitions` mode. Rust stores it in `GrepSearchOptions` as `DefinitionMode`, defaulting to `Off`. The JavaScript SDKs, MCP, and Pi expose the same setting as `classifyDefinitions`.
+Each core grep call uses one `classify_definitions` mode. Rust stores it in `GrepSearchOptions` as `DefinitionMode`, defaulting to `Off`. The JavaScript SDKs expose the same setting as `classifyDefinitions`.
 
 | Mode | Rust variant | C integer | Result |
 | --- | --- | --- | --- |
@@ -502,14 +502,16 @@ Each grep call uses one `classify_definitions` mode. Rust stores it in `GrepSear
 | `definition_only` | `DefinitionOnly` | `2` | Only matches on declared names |
 | `usage_only` | `UsageOnly` | `3` | Only other matches |
 
-JavaScript and Neovim also accept the existing booleans: `false` means `off`, and `true` means `classify`. Neovim groups `classify` results into definitions first, then usages. The SDK default is `off`; MCP and Pi's grep tool default to `classify`. Use the same mode when continuing with a cursor. The C argument is a `uint8_t`, preserving the byte representation of existing boolean calls (`0` and `1`). Modes `2` and `3` require the updated native library; never send them to a library that still expects `bool`.
+JavaScript and Neovim also accept the existing booleans: `false` means `off`, and `true` means `classify`. Neovim groups `classify` results into definitions first, then usages. The SDK default is `off`. Use the same mode when continuing with a cursor. The C argument is a `uint8_t`, preserving the byte representation of existing boolean calls (`0` and `1`). Modes `2` and `3` require the updated native library; never send them to a library that still expects `bool`.
 
 ```typescript
 finder.grep('AudioMap', { classifyDefinitions: 'definition_only' });
 finder.multiGrep({ patterns: ['AudioMap', 'audio_map'], classifyDefinitions: 'definition_only' });
 ```
 
-MCP accepts `{ "query": "AudioMap", "classifyDefinitions": "definition_only" }`. Pi's `ffgrep` accepts the same option with `pattern` instead of `query`. No second enable flag is required. Filtering occurs before page and per-file result limits. Cursors resume at the next file; page size is a soft limit because the current file is returned together. Repeat the same query, mode, and constraints for each page. A timed-out page can be empty with a continuation cursor. Context lines can still contain ordinary code.
+MCP and Pi expose only the optional `definitions_only` boolean to the model. MCP accepts `{ "query": "AudioMap", "definitions_only": true }`; Pi's `ffgrep` uses `pattern` instead of `query`. If the completed search finds no matching declarations, the tool reports that and returns ordinary matches. Cursors preserve the definition search or fallback state, so the model does not need to repeat a mode. The multi-pattern tools accept the same flag.
+
+SDK definition filtering occurs before page and per-file result limits. Cursors resume at the next file; page size is a soft limit because the current file is returned together. Repeat the same query, mode, and constraints for each page. A timed-out page can be empty with a continuation cursor. Context lines can still contain ordinary code.
 
 Supported language families are Rust, Python, Go, JavaScript/TypeScript, Lua, C/C++/Objective-C, Java/C#/Dart/Groovy, Kotlin, Scala, Swift, Ruby, Elixir, Zig, PHP, shell, OCaml/ReScript/F#, and Haskell. The byte-keyword rules in [`definition/languages.rs`](crates/fff-core/src/definition/languages.rs) compile into per-language checkers. Each checker has fixed grammar constants and returns a boolean without a runtime rule dispatcher. Language detection checks at most the last eight filename bytes against a compile-time suffix table. Unknown extensions and extensionless filenames are not classified. `definition_only` excludes them before sorting, pagination, or content reads, and preserves explicit file constraints on empty results.
 
