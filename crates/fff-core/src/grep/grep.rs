@@ -1,6 +1,6 @@
 use super::prefilter::prefilter_with_filepath_retry;
 use super::regex::{RegexMatcher, RegexSink, build_regex};
-use super::sink::{SinkState, debug_assert_newline_terminator};
+use super::sink::{SinkState, debug_assert_newline_terminator, strip_line_terminators};
 use super::types::{GrepMatch, GrepMode, GrepResult, GrepSearchOptions};
 use crate::index::{
     BigramFilter, BigramOverlay, bigram_boundary, fuzzy_candidates, literal_candidates,
@@ -163,7 +163,7 @@ impl Sink for PlainTextSink<'_> {
 
         let Some(is_definition) = self.state.definition_mode.classify_match(
             self.state.file,
-            &line_content,
+            strip_line_terminators(line_bytes),
             &match_byte_offsets,
             false,
         ) else {

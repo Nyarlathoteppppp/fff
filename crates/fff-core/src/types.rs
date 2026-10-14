@@ -557,6 +557,7 @@ impl FileItem {
     }
 
     /// Classify a returned match using the language recorded during indexing.
+    /// Lines longer than 256 bytes are not classified as definitions.
     pub fn is_definition_match(&self, line: &str, ranges: &[(u32, u32)]) -> bool {
         let flags = self.flags.load(Ordering::Relaxed);
         flags & (FileItemFlags::BINARY | FileItemFlags::DELETED) == 0
@@ -570,7 +571,7 @@ impl FileItem {
 
     pub(crate) fn classify_definition_match(
         &self,
-        line: &str,
+        line: &[u8],
         ranges: &[(u32, u32)],
         fuzzy: bool,
     ) -> bool {
@@ -578,7 +579,7 @@ impl FileItem {
         flags & (FileItemFlags::BINARY | FileItemFlags::DELETED) == 0
             && crate::definition::is_definition_match(
                 (flags & FileItemFlags::DEFINITION_LANGUAGE_MASK) >> 3,
-                line.as_bytes(),
+                line,
                 ranges,
                 fuzzy,
             )

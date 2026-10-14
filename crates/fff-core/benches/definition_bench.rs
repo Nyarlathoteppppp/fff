@@ -138,6 +138,17 @@ fn bench_definition(c: &mut Criterion) {
                 definitions
             });
         });
+        group.throughput(Throughput::Elements(1));
+        for length in [255, 256, 257, 1024, 16384] {
+            let line = format!("{:>length$}", examples[0].1);
+            let start = line.find("user_file").unwrap() as u32;
+            let ranges = [(start, start + 9)];
+            group.bench_function(format!("indented_{length}_bytes"), |b| {
+                b.iter(|| {
+                    black_box(&file).is_definition_match(black_box(&line), black_box(&ranges))
+                });
+            });
+        }
         group.finish();
     }
 }

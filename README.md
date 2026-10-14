@@ -513,6 +513,8 @@ MCP and Pi expose only the optional `definitions_only` boolean to the model. MCP
 
 SDK definition filtering occurs before page and per-file result limits. Cursors resume at the next file; page size is a soft limit because the current file is returned together. Repeat the same query, mode, and constraints for each page. A timed-out page can be empty with a continuation cursor. In Neovim, move down (top prompt) or up (bottom prompt) to continue an empty page. Context lines can still contain ordinary code.
 
+Definition classification accepts source lines up to 256 bytes, including indentation and excluding line endings. Longer lines stay ordinary matches and are excluded from `definition_only`. The limit uses the original source bytes, regardless of display truncation or whitespace trimming. For multiline regex matches, it applies to the first physical line.
+
 Supported language families are Rust, Python, Go, JavaScript/TypeScript, Lua, C/C++/Objective-C, Java/C#/Dart/Groovy, Kotlin, Scala, Swift, Ruby, Elixir, Zig, PHP, shell, OCaml/ReScript/F#, and Haskell. The byte-keyword rules in [`definition/languages.rs`](crates/fff-core/src/definition/languages.rs) compile into per-language checkers. Each checker has fixed grammar constants and returns a boolean without a runtime rule dispatcher. Language detection checks at most the last eight filename bytes against a compile-time suffix table. Unknown extensions and extensionless filenames are not classified. `definition_only` excludes them before sorting, pagination, or content reads, and preserves explicit file constraints on empty results.
 
 Files are flagged during scanning. A Rust byte parser uses SIMD-backed delimiter searches on matched lines before pagination, including common modifiers, methods, and function assignments. Matches must overlap the declared name: `user_file` recognizes `fn user_file`, `mod user_file`, and `fn test_user_file`. Implementation and extension blocks stay with ordinary matches. In fuzzy mode, every matched character must fall inside the declared name; matches spread across the name and its arguments, receiver, or return type are ordinary matches. Classification adds no file reads or heap allocations. This is a line heuristic; multiline declarations and surrounding comment or string context can be missed.
@@ -976,6 +978,8 @@ If you are running one grep from a terminal, `rg` is still the right tool. If yo
 Bug reports and pull requests welcome. Agentic coding tools are welcome to be used, but human review is mandatory.
 
 Run `make bench-definition` for Criterion benchmarks of Rust, JavaScript, and Python declarations and references. Each case measures classification through `FileItem::is_definition_match`, with match ranges prepared before timing. The `mixed_256` cases classify shuffled batches of 256 lines; their throughput is reported in lines per second. File indexing, I/O, and finding query matches are excluded.
+
+The `indented_*_bytes` cases measure the 255/256/257-byte boundary and rejection of 1 KiB and 16 KiB lines.
 
 ```sh
 make bench-definition BENCH_ARGS='definition/rust --noplot'

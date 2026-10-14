@@ -253,6 +253,134 @@ fn filtered_match_limits_keep_late_definitions_and_pagination() {
 }
 
 #[test]
+fn definition_line_limit_uses_source_bytes_before_display_changes() {
+    let root = tempfile::tempdir().unwrap();
+    let declaration = "fn Needle() {}";
+    let prefix = format!("{declaration} //");
+    let unicode = format!(
+        "{prefix}{}{}",
+        "é".repeat((256 - prefix.len()) / 2),
+        " ".repeat((256 - prefix.len()) % 2)
+    );
+    assert_eq!(unicode.len(), 256);
+    let lines = [
+        (format!("{declaration:<255}"), true),
+        (format!("{declaration:<256}"), true),
+        (format!("{declaration:<257}"), false),
+        (format!("{declaration:<1024}"), false),
+        (unicode.clone(), true),
+        (format!("{unicode} "), false),
+        (format!("{declaration:>256}"), true),
+        (format!("{declaration:>257}"), false),
+        (declaration.into(), true),
+    ];
+    for (filename, ending) in [("lf.rs", "\n"), ("crlf.rs", "\r\n")] {
+        let source: String = lines
+            .iter()
+            .map(|(line, _)| format!("{line}{ending}"))
+            .collect();
+        std::fs::write(root.path().join(filename), source).unwrap();
+    }
+    let mut picker = FilePicker::new(FilePickerOptions {
+        base_path: root.path().to_string_lossy().into_owned(),
+        watch: false,
+        enable_mmap_cache: false,
+        enable_content_indexing: false,
+        ..Default::default()
+    })
+    .unwrap();
+    picker.collect_files().unwrap();
+    let query = parse_grep_query("Needle");
+    for mode in [
+        Some(GrepMode::PlainText),
+        Some(GrepMode::Regex),
+        Some(GrepMode::Fuzzy),
+        None,
+    ] {
+        for definition_mode in [
+            DefinitionMode::Off,
+            DefinitionMode::Classify,
+            DefinitionMode::DefinitionOnly,
+            DefinitionMode::UsageOnly,
+        ] {
+            for trim_whitespace in [false, true] {
+                let options = GrepSearchOptions {
+                    classify_definitions: definition_mode,
+                    mode: mode.unwrap_or(GrepMode::PlainText),
+                    max_matches_per_file: 0,
+                    page_limit: usize::MAX,
+                    trim_whitespace,
+                    time_budget_ms: 0,
+                    ..Default::default()
+                };
+                let result = if mode.is_some() {
+                    picker.grep(&query, &options)
+                } else {
+                    picker.multi_grep(&["Needle", "Absent"], &[], &options)
+                };
+                let expected = lines
+                    .iter()
+                    .filter(|(_, definition)| definition_mode.retains(*definition))
+                    .count();
+                assert_eq!(
+                    result.matches.len(),
+                    expected * 2,
+                    "{mode:?} {definition_mode:?}"
+                );
+                for matched in &result.matches {
+                    let (_, definition) = &lines[matched.line_number as usize - 1];
+                    assert!(definition_mode.retains(*definition));
+                    assert_eq!(
+                        matched.is_definition,
+                        definition_mode.is_enabled() && *definition,
+                        "{mode:?} {definition_mode:?}: line {}",
+                        matched.line_number
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn definition_line_limit_counts_only_the_first_multiline_regex_line() {
+    let root = tempfile::tempdir().unwrap();
+    for length in [256, 257, 1024] {
+        let declaration = "fn Needle() {}";
+        let source = format!("{declaration:<length$}\r\n{}\r\n", "x".repeat(300));
+        std::fs::write(root.path().join(format!("line{length}.rs")), source).unwrap();
+    }
+    let mut picker = FilePicker::new(FilePickerOptions {
+        base_path: root.path().to_string_lossy().into_owned(),
+        watch: false,
+        enable_mmap_cache: false,
+        enable_content_indexing: false,
+        ..Default::default()
+    })
+    .unwrap();
+    picker.collect_files().unwrap();
+    let result = picker.grep(
+        &parse_grep_query(r"Needle[^\n]*\nxxx"),
+        &GrepSearchOptions {
+            mode: GrepMode::Regex,
+            classify_definitions: DefinitionMode::DefinitionOnly,
+            time_budget_ms: 0,
+            ..Default::default()
+        },
+    );
+    assert!(result.regex_fallback_error.is_none());
+    assert_eq!(result.matches.len(), 1);
+    let matched = &result.matches[0];
+    assert_eq!(
+        result.files[matched.file_index].relative_path(&picker),
+        "line256.rs"
+    );
+    assert_eq!(matched.line_content.len(), 256);
+    assert!(matched.is_definition);
+    assert!(!matched.context_after.is_empty());
+}
+
+#[test]
 fn test_replace_newline_escapes() {
     // Single \n → multiline: replaced with a real newline at byte 3
     assert_eq!(

@@ -50,6 +50,9 @@ macro_rules! languages {
             ranges: &[(u32, u32)],
             fuzzy: bool,
         ) -> bool {
+            if line.len() > 256 {
+                return false;
+            }
             match language {
                 $(id if id == Language::$language as u8 => {
                     super::parser::Parser::<{ Language::$language as u8 }>::new(line)

@@ -69,6 +69,16 @@ mod tests {
                     expected,
                     "{filename}: {line}"
                 );
+                if expected {
+                    for length in [255, 256, 257, 1024] {
+                        let padded = format!("{line:<length$}");
+                        assert_eq!(
+                            is_definition_match(language, padded.as_bytes(), &ranges, fuzzy),
+                            length <= 256,
+                            "{filename}: {length} bytes, fuzzy={fuzzy}"
+                        );
+                    }
+                }
             }
         }
     }

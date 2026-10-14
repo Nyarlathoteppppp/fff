@@ -311,7 +311,7 @@ pub(super) fn fuzzy_grep_search<'a>(
                             char_indices_to_byte_offsets(display_line, &match_indices.indices);
                         let Some(is_definition) = options.classify_definitions.classify_match(
                             file,
-                            display_line,
+                            raw_line.as_bytes(),
                             &match_byte_offsets,
                             true,
                         ) else {

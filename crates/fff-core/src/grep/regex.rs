@@ -79,8 +79,9 @@ impl Sink for RegexSink<'_> {
 
         // MultiLine strategy hands over all matched lines as one blob: keep
         // `line_content` single-line, the remaining lines become after-context.
-        let first_end = memchr::memchr(b'\n', display_bytes).unwrap_or(display_bytes.len());
-        let first_line = strip_line_terminators(&display_bytes[..first_end]);
+        let first_end = memchr::memchr(b'\n', display_bytes);
+        let first_line =
+            strip_line_terminators(&display_bytes[..first_end.unwrap_or(display_bytes.len())]);
         let first_len = first_line.len() as u32;
         let line_content = String::from_utf8_lossy(first_line);
         let mut match_byte_offsets: SmallVec<[(u32, u32); 4]> = SmallVec::new();
@@ -102,7 +103,7 @@ impl Sink for RegexSink<'_> {
 
         let Some(is_definition) = self.state.definition_mode.classify_match(
             self.state.file,
-            &line_content,
+            strip_line_terminators(&line_bytes[..first_end.unwrap_or(line_bytes.len())]),
             &match_byte_offsets,
             false,
         ) else {

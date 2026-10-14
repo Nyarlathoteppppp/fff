@@ -51,13 +51,13 @@ impl DefinitionMode {
     pub(super) fn classify_match(
         self,
         file: &crate::types::FileItem,
-        line: &str,
+        line: &[u8],
         ranges: &[(u32, u32)],
         fuzzy: bool,
     ) -> Option<bool> {
         let is_definition = self.is_enabled()
-            && !line.as_bytes().contains(&0)
-            && file.classify_definition_match(line, ranges, fuzzy);
+            && file.classify_definition_match(line, ranges, fuzzy)
+            && !line.contains(&0);
         self.retains(is_definition).then_some(is_definition)
     }
 }

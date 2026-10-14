@@ -1,6 +1,6 @@
 use super::grep::{GrepContext, perform_grep};
 use super::prefilter::prefilter_files;
-use super::sink::{SinkState, debug_assert_newline_terminator};
+use super::sink::{SinkState, debug_assert_newline_terminator, strip_line_terminators};
 use super::types::{GrepResult, GrepSearchOptions};
 use crate::index::{BigramFilter, BigramOverlay, bigram_boundary, literal_candidates};
 use crate::types::{ContentCacheBudget, FileItem, FileSliceExt};
@@ -71,7 +71,7 @@ impl Sink for AhoCorasickSink<'_> {
 
         let Some(is_definition) = self.state.definition_mode.classify_match(
             self.state.file,
-            &line_content,
+            strip_line_terminators(line_bytes),
             &match_byte_offsets,
             false,
         ) else {
