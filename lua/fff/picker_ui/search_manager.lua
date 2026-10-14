@@ -198,7 +198,9 @@ function M.load_page_at_index(new_page_index, adjust_cursor_fn)
     return false
   end
 
-  if #results == 0 then return false end
+  if #results == 0 and (S.mode ~= 'grep' or (S.pagination.grep_next_file_offset == 0 and #S.filtered_items > 0)) then
+    return false
+  end
 
   if S.mode ~= 'grep' then
     local metadata = file_picker.get_search_metadata()
@@ -209,7 +211,9 @@ function M.load_page_at_index(new_page_index, adjust_cursor_fn)
   S.filtered_items = results
   S.pagination.page_index = new_page_index
 
-  if adjust_cursor_fn then
+  if #results == 0 then
+    S.cursor = 1
+  elseif adjust_cursor_fn then
     local cursor_ok, cursor_err = pcall(adjust_cursor_fn, #results)
     if not cursor_ok then
       vim.notify('Error in cursor adjustment: ' .. tostring(cursor_err), vim.log.levels.ERROR)

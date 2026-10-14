@@ -13,6 +13,7 @@ function M.init(parent_module) P = parent_module end
 
 local S = picker_ui_state.state
 local same_grep_group
+local move_empty_page
 
 local function get_prompt_position() return layout.resolve_prompt_position(S.config) end
 
@@ -72,7 +73,10 @@ end
 
 function M.move_up()
   if not P.state.active then return end
-  if #S.filtered_items == 0 then return end
+  if #S.filtered_items == 0 then
+    move_empty_page(true)
+    return
+  end
 
   local prompt_position = get_prompt_position()
   local items_count = #S.filtered_items
@@ -127,7 +131,10 @@ end
 
 function M.move_down()
   if not P.state.active then return end
-  if #S.filtered_items == 0 then return end
+  if #S.filtered_items == 0 then
+    move_empty_page(false)
+    return
+  end
 
   local prompt_position = get_prompt_position()
   local items_count = #S.filtered_items
@@ -287,6 +294,16 @@ same_grep_group = function(a, b)
     and b ~= nil
     and a.relative_path == b.relative_path
     and (not not a.is_definition) == not not b.is_definition
+end
+
+move_empty_page = function(up)
+  if S.mode ~= 'grep' then return end
+  local forward = up == (get_prompt_position() == 'bottom')
+  if not forward and S.pagination.page_index > 0 then
+    P.load_previous_page()
+  elseif S.pagination.grep_next_file_offset ~= 0 then
+    P.load_next_page()
+  end
 end
 
 return M

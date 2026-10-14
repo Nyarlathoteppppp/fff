@@ -81,9 +81,9 @@ This extension registers FFF-powered tools (`fffind`, `ffgrep`, `fff-multi-grep`
 
 ### `ffgrep`
 
-Set `definitions_only: true` to search for matching declarations. If the completed search finds none, the tool reports that and returns ordinary matches. Cursors remember the search or fallback state. The optional `fff-multi-grep` tool accepts the same flag. Omitting the flag keeps ordinary search behavior.
-
 Search file contents. Smart case, plain text by default, regex optional.
+
+Set `definitions_only: true` to search for matching declarations. If the completed search finds none, the tool reports that and returns ordinary matches. Cursors remember the search or fallback state. The optional `fff-multi-grep` tool accepts the same flag. Omitting the flag keeps ordinary search behavior.
 
 Parameters:
 - `pattern` — search text or regex

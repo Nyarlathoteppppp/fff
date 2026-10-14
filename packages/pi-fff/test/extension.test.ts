@@ -1162,7 +1162,11 @@ test("definition fallback keeps fuzzy query and mode in the cursor", async () =>
   const tool = setup.pi.registerTool.mock.calls
     .map(([tool]) => tool)
     .find((tool) => tool.name === "ffgrep");
-  const params = { pattern: "Nedle", path: "src/", definitions_only: true };
+  const params = {
+    pattern: "Nedle", // spellchecker:disable-line
+    path: "src/",
+    definitions_only: true,
+  };
   const first = await tool.execute("typo", params, abortOptions().signal);
   const cursor = first.content[0].text.match(/cursor="([^"]+)"/)[1];
   await tool.execute("next", { ...params, cursor }, abortOptions().signal);
@@ -1174,6 +1178,53 @@ test("definition fallback keeps fuzzy query and mode in the cursor", async () =>
   ]);
   expect(calls[3].query).toBe(calls[2].query);
   expect(calls[3].options.classifyDefinitions).toBe("classify");
+  await shutdown(setup);
+});
+
+test("grep cursors keep the original finder when path changes or is omitted", async () => {
+  const original = fs.mkdtempSync(path.join(agentDir, "cursor-original-"));
+  const changed = fs.mkdtempSync(path.join(agentDir, "cursor-changed-"));
+  const queries: string[] = [];
+  grepImpl = (query) => {
+    queries.push(query);
+    return grepPage("Needle();", { _offset: queries.length });
+  };
+  const setup = await start("tools-and-ui");
+  const tool = setup.pi.registerTool.mock.calls
+    .map(([tool]) => tool)
+    .find((tool) => tool.name === "ffgrep");
+  const first = await tool.execute(
+    "first",
+    { pattern: "Needle", path: original },
+    abortOptions().signal,
+  );
+  const originalFinder = finders[finders.length - 1];
+  const cursor = first.content[0].text.match(/cursor="([^"]+)"/)[1];
+  const second = await tool.execute(
+    "second",
+    { pattern: "Needle", path: changed, cursor },
+    abortOptions().signal,
+  );
+  const next = second.content[0].text.match(/cursor="([^"]+)"/)[1];
+  await tool.execute("third", { pattern: "Needle", cursor: next }, abortOptions().signal);
+  expect(originalFinder.grep).toHaveBeenCalledTimes(3);
+  expect(new Set(queries).size).toBe(1);
+  expect(createCalls.some((options: any) => options.basePath === changed)).toBe(false);
+  await shutdown(setup);
+});
+
+test("grep rejects cursors whose finder was destroyed", async () => {
+  grepImpl = () => grepPage("Needle();", { _offset: 1 });
+  const setup = await start("tools-and-ui");
+  const tool = setup.pi.registerTool.mock.calls
+    .map(([tool]) => tool)
+    .find((tool) => tool.name === "ffgrep");
+  const first = await tool.execute("first", { pattern: "Needle" }, abortOptions().signal);
+  const cursor = first.content[0].text.match(/cursor="([^"]+)"/)[1];
+  finders[finders.length - 1].destroy();
+  await expect(
+    tool.execute("expired", { pattern: "Needle", cursor }, abortOptions().signal),
+  ).rejects.toThrow("Search cursor expired");
   await shutdown(setup);
 });
 

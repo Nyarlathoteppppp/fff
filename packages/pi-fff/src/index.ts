@@ -91,6 +91,7 @@ function toolNameList(names: ToolNames): string[] {
 
 interface ToolGrepCursor {
   cursor: GrepCursor;
+  finder: FileFinderApi;
   definitionsOnly: boolean;
   foundDefinitions: boolean;
   mode?: GrepMode;
@@ -1023,16 +1024,21 @@ export default function fffExtension(pi: ExtensionAPI) {
       if (signal?.aborted) throw new Error("Operation aborted");
 
       const pattern = params.pattern;
-      const aux = await resolveFinderForPath(params.path, pattern, params.exclude);
+      const resumed = params.cursor ? getCursor(params.cursor) : undefined;
+      const aux = resumed
+        ? null
+        : await resolveFinderForPath(params.path, pattern, params.exclude);
 
-      const picker = aux ? aux.finder : await ensureFinder(activeCwd);
+      const picker =
+        resumed?.finder ?? (aux ? aux.finder : await ensureFinder(activeCwd));
+      if (picker.isDestroyed)
+        throw new Error("Search cursor expired. Start a new search without the cursor.");
       const effectiveLimit = Math.max(1, params.limit ?? DEFAULT_GREP_LIMIT);
       // pageSize caps TOTAL matches across all files (soft cap: the current file
       // is always finished first). maxMatchesPerFile stays decoupled at the engine
       // default so same-file overflow remains reachable via cursor (#825).
       const pageSize = Math.min(effectiveLimit, GREP_PAGE_SIZE_MAX);
       const context = clampContext(params.context);
-      const resumed = params.cursor ? getCursor(params.cursor) : undefined;
       let query =
         resumed?.query ??
         (aux ? aux.query : buildQuery(params.path, pattern, params.exclude, activeCwd));
@@ -1159,6 +1165,7 @@ export default function fffExtension(pi: ExtensionAPI) {
       if (result.nextCursor) {
         const cursor = storeCursor({
           cursor: result.nextCursor,
+          finder: picker,
           definitionsOnly,
           foundDefinitions:
             foundDefinitions || (definitionsOnly && result.items.length > 0),
@@ -1394,12 +1401,16 @@ export default function fffExtension(pi: ExtensionAPI) {
         if (!params.patterns?.length)
           throw new Error("patterns array must have at least 1 element");
 
-        const f = await ensureFinder(activeCwd);
+        const resumed = params.cursor ? getCursor(params.cursor) : undefined;
+        const f = resumed?.finder ?? (await ensureFinder(activeCwd));
+        if (f.isDestroyed)
+          throw new Error(
+            "Search cursor expired. Start a new search without the cursor.",
+          );
         const effectiveLimit = Math.max(1, params.limit ?? DEFAULT_GREP_LIMIT);
         const pageSize = Math.min(effectiveLimit, GREP_PAGE_SIZE_MAX);
         const context = clampContext(params.context);
 
-        const resumed = params.cursor ? getCursor(params.cursor) : undefined;
         let definitionsOnly =
           resumed?.definitionsOnly ?? params.definitions_only ?? false;
         const foundDefinitions = resumed?.foundDefinitions ?? false;
@@ -1444,6 +1455,7 @@ export default function fffExtension(pi: ExtensionAPI) {
         if (result.nextCursor) {
           const cursor = storeCursor({
             cursor: result.nextCursor,
+            finder: f,
             definitionsOnly,
             foundDefinitions:
               foundDefinitions || (definitionsOnly && result.items.length > 0),

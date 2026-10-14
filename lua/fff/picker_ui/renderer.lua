@@ -84,7 +84,14 @@ local function render_grep_empty_state(ctx)
   local hl_cmds = {}
 
   table.insert(content, '')
-  table.insert(content, '  Start typing to search file contents...')
+  if S.pagination.grep_next_file_offset ~= 0 then
+    local direction = prompt_position == 'bottom' and 'up' or 'down'
+    table.insert(content, '  More files remain. Move ' .. direction .. ' to keep searching.')
+  elseif S.query and S.query ~= '' then
+    table.insert(content, '  No matches found.')
+  else
+    table.insert(content, '  Start typing to search file contents...')
+  end
   table.insert(content, '')
   table.insert(content, '  Tips:')
   table.insert(content, '    "pattern *.rs"    search only in Rust files')
@@ -123,7 +130,15 @@ local function render_grep_empty_state(ctx)
   for i = 0, #content - 1 do
     local line = content[i + 1]
     if
-      line and (line:match('^%s+Start typing') or line:match('^%s+Tips') or line:match('^%s+"') or line:match('^%s+!'))
+      line
+      and (
+        line:match('^%s+Start typing')
+        or line:match('^%s+More files remain')
+        or line:match('^%s+No matches found')
+        or line:match('^%s+Tips')
+        or line:match('^%s+"')
+        or line:match('^%s+!')
+      )
     then
       pcall(
         vim.api.nvim_buf_set_extmark,
