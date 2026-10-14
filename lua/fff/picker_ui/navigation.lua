@@ -12,11 +12,13 @@ local P = nil
 function M.init(parent_module) P = parent_module end
 
 local S = picker_ui_state.state
+local same_grep_group
 
 local function get_prompt_position() return layout.resolve_prompt_position(S.config) end
 
 --- After cursor moves, decide whether the combo separator should hide.
 local function maybe_hide_combo_separator()
+  if S.mode == 'grep' then return end
   if not (S.combo_initial_cursor and S.combo_visible) then return end
   local distance_past = S.cursor - S.combo_initial_cursor
   if distance_past == 0 then return end
@@ -86,7 +88,7 @@ function M.move_up()
       local has_more = false
       if page_size > 0 then
         if S.mode == 'grep' then
-          has_more = S.pagination.grep_next_file_offset > 0
+          has_more = S.pagination.grep_next_file_offset ~= 0
         else
           local max_page = math.max(0, math.ceil(S.pagination.total_matched / page_size) - 1)
           has_more = S.pagination.page_index < max_page
@@ -152,7 +154,7 @@ function M.move_down()
       local has_more = false
       if page_size > 0 then
         if S.mode == 'grep' then
-          has_more = S.pagination.grep_next_file_offset > 0
+          has_more = S.pagination.grep_next_file_offset ~= 0
         else
           local max_page = math.max(0, math.ceil(S.pagination.total_matched / page_size) - 1)
           has_more = S.pagination.page_index < max_page
@@ -211,10 +213,10 @@ function M.grep_jump_to_next_file()
   if not items or #items == 0 then return end
 
   local old_cursor = S.cursor
-  local current_path = items[S.cursor] and items[S.cursor].relative_path
+  local current = items[S.cursor]
 
   for i = S.cursor + 1, #items do
-    if items[i].relative_path ~= current_path then
+    if not same_grep_group(items[i], current) then
       S.cursor = i
       update_ui_after_jump(old_cursor)
       return
@@ -225,9 +227,9 @@ function M.grep_jump_to_next_file()
     local new_items = S.filtered_items
     if new_items and #new_items > 0 then
       local idx = 1
-      if new_items[1].relative_path == current_path then
+      if same_grep_group(new_items[1], current) then
         for i = 2, #new_items do
-          if new_items[i].relative_path ~= current_path then
+          if not same_grep_group(new_items[i], current) then
             idx = i
             break
           end
@@ -245,12 +247,12 @@ function M.grep_jump_to_prev_file()
   if not items or #items == 0 then return end
 
   local old_cursor = S.cursor
-  local current_path = items[S.cursor] and items[S.cursor].relative_path
+  local current = items[S.cursor]
 
   for i = S.cursor - 1, 1, -1 do
-    if items[i].relative_path ~= current_path then
+    if not same_grep_group(items[i], current) then
       local target_idx = i
-      while target_idx > 1 and items[target_idx - 1].relative_path == items[i].relative_path do
+      while target_idx > 1 and same_grep_group(items[target_idx - 1], items[i]) do
         target_idx = target_idx - 1
       end
       S.cursor = target_idx
@@ -263,27 +265,28 @@ function M.grep_jump_to_prev_file()
     local new_items = S.filtered_items
     if not new_items or #new_items == 0 then return end
 
-    local target_path = nil
+    local target_idx = #new_items
     for i = #new_items, 1, -1 do
-      if new_items[i].relative_path ~= current_path then
-        target_path = new_items[i].relative_path
+      if not same_grep_group(new_items[i], current) then
+        target_idx = i
         break
       end
     end
 
-    target_path = target_path or new_items[#new_items].relative_path
-
-    local first = 1
-    for i = 1, #new_items do
-      if new_items[i].relative_path == target_path then
-        first = i
-        break
-      end
+    while target_idx > 1 and same_grep_group(new_items[target_idx - 1], new_items[target_idx]) do
+      target_idx = target_idx - 1
     end
 
-    S.cursor = first
+    S.cursor = target_idx
     update_ui_after_jump(old_cursor)
   end
+end
+
+same_grep_group = function(a, b)
+  return a ~= nil
+    and b ~= nil
+    and a.relative_path == b.relative_path
+    and (not not a.is_definition) == not not b.is_definition
 end
 
 return M

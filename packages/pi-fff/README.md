@@ -81,6 +81,8 @@ This extension registers FFF-powered tools (`fffind`, `ffgrep`, `fff-multi-grep`
 
 ### `ffgrep`
 
+Set `classifyDefinitions: "definition_only"` to return only matching declarations. Other modes are `"classify"` (the grep default), `"usage_only"`, and `"off"`. The optional `fff-multi-grep` tool accepts the same setting and defaults to `"off"`. Repeat the mode when continuing with a cursor. The mode also applies to fuzzy retries.
+
 Search file contents. Smart case, plain text by default, regex optional.
 
 Parameters:

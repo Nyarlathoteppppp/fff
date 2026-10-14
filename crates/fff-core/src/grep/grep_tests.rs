@@ -110,6 +110,77 @@ fn sparse_matches_after_empty_batches_preserve_pagination() {
 }
 
 #[test]
+fn definition_only_keeps_unknown_language_files_out_of_fallbacks() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("docs.txt"), "Needle\n").unwrap();
+    std::fs::write(dir.path().join("definition.rs"), "fn Needle() {}\n").unwrap();
+    let mut picker = FilePicker::new(FilePickerOptions {
+        base_path: dir.path().to_string_lossy().into_owned(),
+        enable_content_indexing: false,
+        enable_mmap_cache: false,
+        watch: false,
+        ..Default::default()
+    })
+    .unwrap();
+    picker.collect_files().unwrap();
+    let parser = fff_query_parser::QueryParser::new(fff_query_parser::AiGrepConfig);
+    for mode in [GrepMode::PlainText, GrepMode::Regex, GrepMode::Fuzzy] {
+        let options = GrepSearchOptions {
+            mode,
+            classify_definitions: DefinitionMode::DefinitionOnly,
+            time_budget_ms: 0,
+            ..Default::default()
+        };
+        for raw in ["docs.txt Needle", "missing.rs Needle", "*.txt Needle"] {
+            let parsed = parser.parse(raw);
+            let result = picker.grep(&parsed, &options);
+            assert!(result.matches.is_empty(), "{raw}");
+            assert_eq!(result.filtered_file_count, 0, "{raw}");
+            assert_eq!(result.total_files_searched, 0, "{raw}");
+            assert_eq!(result.next_file_offset, 0, "{raw}");
+        }
+        let parsed = parser.parse("Needle");
+        let result = picker.grep(&parsed, &options);
+        assert_eq!(result.matches.len(), 1);
+        assert_eq!(result.filtered_file_count, 1);
+        assert!(result.matches[0].is_definition);
+    }
+}
+
+#[test]
+fn pagination_keeps_unreturned_files_before_abort() {
+    let file = crate::types::FileItem::new_raw(0, 1, 0, None, false);
+    for (page_limit, next_offset) in [(1, 11), (2, 12), (10, 13)] {
+        let options = GrepSearchOptions {
+            file_offset: 10,
+            page_limit,
+            classify_definitions: DefinitionMode::DefinitionOnly,
+            ..Default::default()
+        };
+        let results = (0..3)
+            .map(|idx| {
+                let matched = GrepMatch {
+                    file_index: 0,
+                    line_number: 1,
+                    col: 3,
+                    byte_offset: 0,
+                    line_content: "fn needle() {}".into(),
+                    match_byte_offsets: smallvec::smallvec![(3, 9)],
+                    fuzzy_score: Some(100),
+                    is_definition: true,
+                    context_before: Vec::new(),
+                    context_after: Vec::new(),
+                };
+                (idx, &file, vec![matched])
+            })
+            .collect();
+        let result = GrepResult::collect(results, 5, &options, 15, 15, Some(3));
+        assert_eq!(result.matches.len(), page_limit.min(3));
+        assert_eq!(result.next_file_offset, next_offset);
+    }
+}
+
+#[test]
 fn test_replace_newline_escapes() {
     // Single \n → multiline: replaced with a real newline at byte 3
     assert_eq!(
@@ -258,7 +329,7 @@ fn test_multi_grep_search() {
         enforce_time_budget: false,
         before_context: 0,
         after_context: 0,
-        classify_definitions: false,
+        classify_definitions: Default::default(),
         trim_whitespace: false,
         abort_signal: None,
     };
@@ -532,7 +603,7 @@ fn test_grep_no_duplicates_with_overflow_trailing_bits() {
         enforce_time_budget: false,
         before_context: 0,
         after_context: 0,
-        classify_definitions: false,
+        classify_definitions: Default::default(),
         trim_whitespace: false,
         abort_signal: Some(std::sync::Arc::new(AtomicBool::new(false))),
     };

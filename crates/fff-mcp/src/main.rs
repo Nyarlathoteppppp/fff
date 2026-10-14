@@ -51,6 +51,7 @@ pub const MCP_INSTRUCTIONS: &str = concat!(
     "Grep matches single lines. Search for ONE identifier per query:\n",
     "  + 'InProgressQuote'           -> finds definition + all usages\n",
     "  + 'ActorAuth'                 -> finds enum, struct, all call sites\n",
+    "Set classifyDefinitions to 'definition_only' to return only declarations, or 'usage_only' to return other matches. Repeat the mode with a cursor.\n",
     "  x 'load.*metadata.*InProgressQuote' -> regex spanning multiple tokens, 0 results\n",
     "  x 'ctx.data::<ActorAuth>'     -> code syntax, too specific, 0 results\n",
     "  x 'struct ActorAuth'          -> adding keywords narrows results, misses enums/traits/type aliases\n",

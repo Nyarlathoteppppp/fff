@@ -222,8 +222,38 @@ pub(crate) fn grep_search<'a>(
     // for later pages: an empty full scan at offset 0 stays empty at any offset,
     // so paging offsets consistently index the literal search's file list.
     let full_scan_empty = result.matches.is_empty() && result.next_file_offset == 0;
-    if !full_scan_empty || query.constraints.is_empty() || abort_signal.load(Ordering::Relaxed) {
+    if !full_scan_empty
+        || query.constraints.is_empty()
+        || options.classify_definitions == super::DefinitionMode::DefinitionOnly
+        || abort_signal.load(Ordering::Relaxed)
+    {
         return result;
+    }
+
+    // An empty section must not trigger a literal retry when the query matched the other section.
+    if options.classify_definitions.is_filtered() {
+        let probe = GrepSearchOptions {
+            file_offset: 0,
+            page_limit: 1,
+            classify_definitions: Default::default(),
+            ..options.clone()
+        };
+        let unfiltered = grep_search_parsed(
+            files,
+            total_files,
+            query,
+            &probe,
+            budget,
+            bigram_index,
+            bigram_overlay,
+            abort_signal,
+            base_path,
+            arena,
+            overflow_arena,
+        );
+        if !unfiltered.matches.is_empty() || unfiltered.next_file_offset != 0 {
+            return result;
+        }
     }
 
     let raw = query.raw_query.trim();
@@ -420,7 +450,6 @@ fn grep_search_parsed<'a>(
                 max_matches,
                 before_context: options.before_context,
                 after_context,
-                classify_definitions: options.classify_definitions,
             };
 
             match regex {
@@ -639,7 +668,13 @@ where
                         return None;
                     }
 
-                    let file_matches = search_file(content, options.max_matches_per_file);
+                    let match_limit = if options.classify_definitions.is_filtered() {
+                        0
+                    } else {
+                        options.max_matches_per_file
+                    };
+                    let mut file_matches = search_file(content, match_limit);
+                    classify_matches(file, &mut file_matches, options);
 
                     if file_matches.is_empty() {
                         return None;
@@ -716,5 +751,26 @@ where
         next_file_offset,
         regex_fallback_error: None,
         literal_fallback: false,
+    }
+}
+
+pub(super) fn classify_matches(
+    file: &FileItem,
+    matches: &mut Vec<GrepMatch>,
+    options: &GrepSearchOptions,
+) {
+    if options.classify_definitions.is_enabled() {
+        matches.retain_mut(|m| {
+            m.is_definition = !m.line_content.as_bytes().contains(&0)
+                && file.classify_definition_match(
+                    &m.line_content,
+                    &m.match_byte_offsets,
+                    m.fuzzy_score.is_some(),
+                );
+            options.classify_definitions.retains(m.is_definition)
+        });
+        if options.classify_definitions.is_filtered() && options.max_matches_per_file != 0 {
+            matches.truncate(options.max_matches_per_file);
+        }
     }
 }

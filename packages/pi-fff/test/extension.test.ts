@@ -124,6 +124,7 @@ mock.module("@sinclair/typebox", () => ({
   Type: {
     Array: (items: unknown, options?: unknown) => ({ type: "array", items, options }),
     Boolean: schema("boolean"),
+    Literal: (value: unknown) => ({ const: value }),
     Number: schema("number"),
     Object: (properties: unknown, options?: unknown) => ({
       type: "object",

@@ -6,7 +6,7 @@ use rayon::prelude::*;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use super::sink::{classify_definition, strip_line_terminators, truncate_display_bytes};
+use super::sink::{strip_line_terminators, truncate_display_bytes};
 use super::types::{GrepMatch, GrepResult, GrepSearchOptions};
 
 #[allow(clippy::too_many_arguments)]
@@ -319,10 +319,7 @@ pub(super) fn fuzzy_grep_search<'a>(
                             line_number: ln,
                             col,
                             byte_offset: bo,
-                            is_definition: classify_definition(
-                                options.classify_definitions,
-                                display_line,
-                            ),
+                            is_definition: false,
                             line_content: display_line.to_string(),
                             match_byte_offsets,
                             fuzzy_score: Some(match_indices.score),
@@ -330,11 +327,15 @@ pub(super) fn fuzzy_grep_search<'a>(
                             context_after: Vec::new(),
                         });
 
-                        if max_matches_per_file != 0 && file_matches.len() >= max_matches_per_file {
+                        if !options.classify_definitions.is_filtered()
+                            && max_matches_per_file != 0
+                            && file_matches.len() >= max_matches_per_file
+                        {
                             break;
                         }
                     }
 
+                    super::grep::classify_matches(file, &mut file_matches, options);
                     if file_matches.is_empty() {
                         return None;
                     }

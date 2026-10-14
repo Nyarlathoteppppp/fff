@@ -954,7 +954,23 @@ export default function fffExtension(pi: ExtensionAPI) {
 
   // --- grep tool ---
 
+  const definitionModeSchema = Type.Optional(
+    Type.Union(
+      [
+        Type.Literal("off"),
+        Type.Literal("classify"),
+        Type.Literal("definition_only"),
+        Type.Literal("usage_only"),
+      ],
+      {
+        description:
+          "Return all matches, matching declarations only, or usages only. Repeat this mode with a cursor.",
+      },
+    ),
+  );
+
   const grepSchema = Type.Object({
+    classifyDefinitions: definitionModeSchema,
     pattern: Type.String({
       description: "Search pattern (literal text or regex)",
     }),
@@ -996,6 +1012,7 @@ export default function fffExtension(pi: ExtensionAPI) {
     promptSnippet: "Grep contents",
     promptGuidelines: (names) => [
       `${names.grep}: prefer bare identifiers as patterns. Literal queries are most efficient.`,
+      `${names.grep}: use classifyDefinitions: "definition_only" to return only matching declarations.`,
       `${names.grep}: use path for include ('src/', '*.ts') and exclude for noise ('test/,*.min.js').`,
       `${names.grep}: caseSensitive: true when you need exact case (smart-case otherwise).`,
       `${names.grep}: after 1-2 greps, read the top match instead of more greps.`,
@@ -1067,7 +1084,7 @@ export default function fffExtension(pi: ExtensionAPI) {
         cursor: (params.cursor ? getCursor(params.cursor) : null) ?? null,
         beforeContext: context,
         afterContext: context,
-        classifyDefinitions: true,
+        classifyDefinitions: params.classifyDefinitions ?? "classify",
         timeBudgetMs: GREP_TIME_BUDGET_MS,
       });
 
@@ -1091,7 +1108,10 @@ export default function fffExtension(pi: ExtensionAPI) {
         // excluded / out-of-scope directories.
         const lastSeg = params.path?.split(/[\\/]/).pop() ?? "";
         const pathTargetsFile = /\.[a-zA-Z][a-zA-Z0-9]{0,9}$/.test(lastSeg);
-        const fuzzyQuery = pathTargetsFile ? pattern : query;
+        const filtered =
+          params.classifyDefinitions === "definition_only" ||
+          params.classifyDefinitions === "usage_only";
+        const fuzzyQuery = pathTargetsFile && !filtered ? pattern : query;
         const fuzzy = picker.grep(fuzzyQuery, {
           mode: "fuzzy",
           smartCase,
@@ -1100,7 +1120,7 @@ export default function fffExtension(pi: ExtensionAPI) {
           cursor: null,
           beforeContext: 0,
           afterContext: 0,
-          classifyDefinitions: true,
+          classifyDefinitions: params.classifyDefinitions ?? "classify",
           timeBudgetMs: GREP_TIME_BUDGET_MS,
         });
 
@@ -1300,6 +1320,7 @@ export default function fffExtension(pi: ExtensionAPI) {
 
   if (enableMultiGrep) {
     const multiGrepSchema = Type.Object({
+      classifyDefinitions: definitionModeSchema,
       patterns: Type.Array(Type.String(), {
         description:
           "Literal patterns (OR). Include snake_case/camelCase/PascalCase variants.",
@@ -1328,6 +1349,7 @@ export default function fffExtension(pi: ExtensionAPI) {
         `${names.multiGrep}: use when searching for several identifiers at once.`,
         `${names.multiGrep}: include all naming-convention variants (snake/camel/Pascal).`,
         `${names.multiGrep}: patterns are literal. Use constraints for file filters.`,
+        `${names.multiGrep}: use classifyDefinitions: "definition_only" to return only matching declarations.`,
       ],
       parameters: multiGrepSchema,
 
@@ -1344,6 +1366,7 @@ export default function fffExtension(pi: ExtensionAPI) {
         const grepResult = f.multiGrep({
           patterns: params.patterns,
           constraints: params.constraints,
+          classifyDefinitions: params.classifyDefinitions ?? "off",
           maxMatchesPerFile: GREP_MAX_MATCHES_PER_FILE,
           pageSize,
           smartCase: true,

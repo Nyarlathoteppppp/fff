@@ -75,7 +75,7 @@ fn make_grep_options(
             enforce_time_budget: false,
             before_context: ctx_lines,
             after_context: after_ctx,
-            classify_definitions: true,
+            classify_definitions: true.into(),
             trim_whitespace: true,
             abort_signal: None,
         },
@@ -116,6 +116,10 @@ pub struct GrepParams {
     pub output_mode: Option<String>,
     /// Context lines before/after each match.
     pub context: Option<f64>,
+    /// Classify all matches or return definitions/usages only. Default: classify. Keep the same mode with a cursor.
+    #[serde(rename = "classifyDefinitions", alias = "classify_definitions")]
+    #[schemars(schema_with = "definition_mode_schema")]
+    pub classify_definitions: Option<fff::DefinitionMode>,
 }
 
 fn deserialize_patterns<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
@@ -180,6 +184,10 @@ pub struct MultiGrepParams {
     pub output_mode: Option<String>,
     /// Context lines before/after each match.
     pub context: Option<f64>,
+    /// Classify all matches or return definitions/usages only. Default: classify. Keep the same mode with a cursor.
+    #[serde(rename = "classifyDefinitions", alias = "classify_definitions")]
+    #[schemars(schema_with = "definition_mode_schema")]
+    pub classify_definitions: Option<fff::DefinitionMode>,
 }
 
 #[derive(Clone)]
@@ -269,18 +277,23 @@ impl FffServer {
 
     fn perform_grep(
         &self,
-        query: &str,
+        params: &GrepParams,
         mode: GrepMode,
-        max_results: usize,
-        cursor_id: Option<&str>,
-        output_mode: OutputMode,
-        context: Option<usize>,
     ) -> Result<CallToolResult, ErrorData> {
-        let file_offset = cursor_id
+        let query = params.query.as_str();
+        let max_results = normalize_max_results(params.max_results, 20);
+        let output_mode = OutputMode::new(params.output_mode.as_deref());
+        let context = normalize_context(params.context);
+        let file_offset = params
+            .cursor
+            .as_deref()
             .and_then(|id| self.cursor_store.lock().ok()?.get(id))
             .unwrap_or(0);
 
-        let (options, auto_expand) = make_grep_options(output_mode, mode, file_offset, context);
+        let (mut options, auto_expand) = make_grep_options(output_mode, mode, file_offset, context);
+        options.classify_definitions = params
+            .classify_definitions
+            .unwrap_or(fff::DefinitionMode::Classify);
         let ctx_lines = options.before_context;
 
         // Acquire picker lock once for the entire operation.
@@ -298,7 +311,7 @@ impl FffServer {
         if result.matches.is_empty() && file_offset == 0 {
             // Auto-retry: try broadening multi-word queries by dropping first non-constraint word
             let parts: Vec<&str> = query.split_whitespace().collect();
-            if parts.len() >= 2 {
+            if parts.len() >= 2 && !options.classify_definitions.is_filtered() {
                 let first_word = parts[0];
                 let is_valid_constraint = first_word.starts_with('!')
                     || first_word.starts_with('*')
@@ -315,7 +328,9 @@ impl FffServer {
                         mode
                     };
 
-                    let (retry_options, _) = make_grep_options(output_mode, retry_mode, 0, context);
+                    let (mut retry_options, _) =
+                        make_grep_options(output_mode, retry_mode, 0, context);
+                    retry_options.classify_definitions = options.classify_definitions;
                     let retry_result = picker.grep(&rest_parsed, &retry_options);
 
                     if !retry_result.matches.is_empty() && retry_result.matches.len() <= 10 {
@@ -341,9 +356,18 @@ impl FffServer {
             }
 
             // Fuzzy fallback for typo tolerance
-            let fuzzy_query = cleanup_fuzzy_query(query);
-            let (fuzzy_options, _) = make_grep_options(output_mode, GrepMode::Fuzzy, 0, Some(0));
-            let fuzzy_parsed = parser.parse(&fuzzy_query);
+            let fuzzy_query = if options.classify_definitions.is_filtered() {
+                cleanup_fuzzy_query(&parsed.grep_text())
+            } else {
+                cleanup_fuzzy_query(query)
+            };
+            let (mut fuzzy_options, _) =
+                make_grep_options(output_mode, GrepMode::Fuzzy, 0, Some(0));
+            fuzzy_options.classify_definitions = options.classify_definitions;
+            let mut fuzzy_parsed = parser.parse(&fuzzy_query);
+            if options.classify_definitions.is_filtered() {
+                fuzzy_parsed.constraints = parsed.constraints.clone();
+            }
             let fuzzy_result = picker.grep(&fuzzy_parsed, &fuzzy_options);
 
             if !fuzzy_result.matches.is_empty() {
@@ -368,7 +392,7 @@ impl FffServer {
             }
 
             // File path fallback: if query looks like a path, suggest the matching file
-            if query.contains('/') {
+            if query.contains('/') && !options.classify_definitions.is_filtered() {
                 let file_parser = QueryParser::default();
                 let file_query = file_parser.parse(query);
                 let file_opts = FuzzySearchOptions {
@@ -555,7 +579,7 @@ impl FffServer {
     /// Prefer plain text over regex. Filter files with constraints.
     #[tool(
         name = "grep",
-        description = "Search file contents. Search for bare identifiers (e.g. 'InProgressQuote', 'ActorAuth'), NOT code syntax or regex. Filter files with constraints (e.g. '*.rs query', 'src/ query'). Use filename, directory (ending with /) or glob expressions to prefilter. See server instructions for constraint syntax and core rules.",
+        description = "Search file contents. Search for bare identifiers (e.g. 'InProgressQuote', 'ActorAuth'), NOT code syntax or regex. Set classifyDefinitions to 'definition_only' to return only matching declarations. Filter files with constraints (e.g. '*.rs query', 'src/ query'). Use filename, directory (ending with /) or glob expressions to prefilter. See server instructions for constraint syntax and core rules.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,
@@ -569,9 +593,6 @@ impl FffServer {
         self.bump_activity();
         self.wait_for_scan(SCAN_READY_TIMEOUT)?;
 
-        let max_results = normalize_max_results(params.max_results, 20);
-        let output_mode = OutputMode::new(params.output_mode.as_deref());
-
         let parsed = QueryParser::new(AiGrepConfig).parse(&params.query);
         let grep_text = parsed.grep_text();
 
@@ -581,14 +602,7 @@ impl FffServer {
             GrepMode::PlainText
         };
 
-        let mut result = self.perform_grep(
-            &params.query,
-            mode,
-            max_results,
-            params.cursor.as_deref(),
-            output_mode,
-            normalize_context(params.context),
-        )?;
+        let mut result = self.perform_grep(&params, mode)?;
         self.maybe_append_update_notice(&mut result);
         Ok(result)
     }
@@ -597,7 +611,7 @@ impl FffServer {
     /// Patterns are literal text — NEVER escape special characters.
     #[tool(
         name = "multi_grep",
-        description = "Search file contents for lines matching ANY of multiple patterns (OR logic). IMPORTANT: This returns files where ANY query matches, NOT all patterns. Patterns are literal text — NEVER escape special characters (no \\( \\) \\. etc). Faster than regex alternation for literal text. See server instructions for constraint syntax.",
+        description = "Search file contents for lines matching ANY of multiple patterns (OR logic). IMPORTANT: This returns files where ANY query matches, NOT all patterns. Patterns are literal text — NEVER escape special characters (no \\( \\) \\. etc). Set classifyDefinitions to 'definition_only' to return only matching declarations. Faster than regex alternation for literal text. See server instructions for constraint syntax.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,
@@ -629,8 +643,11 @@ impl FffServer {
             .and_then(|id| self.cursor_store.lock().ok()?.get(id))
             .unwrap_or(0);
 
-        let (options, auto_expand) =
+        let (mut options, auto_expand) =
             make_grep_options(output_mode, GrepMode::PlainText, file_offset, context);
+        options.classify_definitions = params
+            .classify_definitions
+            .unwrap_or(fff::DefinitionMode::Classify);
 
         let ctx_lines = options.before_context;
         let constraint_query = params.constraints.as_deref().unwrap_or("");
@@ -686,6 +703,14 @@ impl ServerHandler for FffServer {
             .with_server_info(Implementation::new("fff", env!("CARGO_PKG_VERSION")))
             .with_instructions(instructions)
     }
+}
+
+fn definition_mode_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    schemars::json_schema!({
+        "type": "string",
+        "enum": ["off", "classify", "definition_only", "usage_only"],
+        "default": "classify"
+    })
 }
 
 #[cfg(test)]
