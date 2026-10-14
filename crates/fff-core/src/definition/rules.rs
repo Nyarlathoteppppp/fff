@@ -53,6 +53,9 @@ macro_rules! declaration {
                 #[allow(unused_mut)]
                 let mut modifiers = false;
                 loop {
+                    if Self::LANGUAGE == super::languages::Language::Java && self.peek() == Some(b'<') {
+                        self.group(b'<', b'>')?;
+                    }
                     if Self::LANGUAGE == super::languages::Language::JavaScript {
                         self.eat(b"*");
                         self.eat(b"#");
@@ -147,7 +150,11 @@ macro_rules! action {
         if $p.skip_declaration_prefix() {
             continue;
         }
-        return $p.declaration_name::<true, false>();
+        if let Some(name) = $p.declaration_name::<true, false>() {
+            return Some(name);
+        }
+        $p.pos = $name.start;
+        return $p.c_function($modifiers);
     }};
     (MlType, $p:ident, $name:ident, $modifiers:ident) => {{
         if $p.skip_declaration_prefix() {
@@ -157,6 +164,14 @@ macro_rules! action {
     }};
     (FunctionBinding, $p:ident, $name:ident, $modifiers:ident) => {{
         let $name = $p.identifier()?;
+        $p.assignment()?;
+        return Some($name);
+    }};
+    (ConstBinding, $p:ident, $name:ident, $modifiers:ident) => {{
+        let $name = $p.identifier()?;
+        if &$p.line[$name.clone()] == b"enum" {
+            return $p.identifier();
+        }
         $p.assignment()?;
         return Some($name);
     }};

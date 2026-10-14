@@ -208,7 +208,7 @@ where
         matches!(self.peek(), Some(b'{' | b':')).then_some(name)
     }
 
-    fn c_function(&mut self, modifiers: bool) -> Option<Range<usize>> {
+    pub(super) fn c_function(&mut self, modifiers: bool) -> Option<Range<usize>> {
         let mut names = 0;
         let mut last = None;
         loop {
