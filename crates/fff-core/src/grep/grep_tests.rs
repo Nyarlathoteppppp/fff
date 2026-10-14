@@ -181,6 +181,78 @@ fn pagination_keeps_unreturned_files_before_abort() {
 }
 
 #[test]
+fn filtered_match_limits_keep_late_definitions_and_pagination() {
+    let root = tempfile::tempdir().unwrap();
+    let source = format!(
+        "{}  fn NeedleFirst() {{}}\n  fn NeedleSecond() {{}}\n",
+        "  Needle();\n".repeat(50)
+    );
+    for index in 0..3 {
+        std::fs::write(root.path().join(format!("file{index}.rs")), &source).unwrap();
+    }
+    let mut picker = FilePicker::new(FilePickerOptions {
+        base_path: root.path().to_string_lossy().into_owned(),
+        watch: false,
+        enable_mmap_cache: false,
+        enable_content_indexing: false,
+        ..Default::default()
+    })
+    .unwrap();
+    picker.collect_files().unwrap();
+    let query = parse_grep_query("Needle");
+    for mode in [
+        Some(GrepMode::PlainText),
+        Some(GrepMode::Regex),
+        Some(GrepMode::Fuzzy),
+        None,
+    ] {
+        for definition_mode in [
+            DefinitionMode::Off,
+            DefinitionMode::Classify,
+            DefinitionMode::DefinitionOnly,
+            DefinitionMode::UsageOnly,
+        ] {
+            let mut options = GrepSearchOptions {
+                classify_definitions: definition_mode,
+                mode: mode.unwrap_or(GrepMode::PlainText),
+                max_matches_per_file: 1,
+                page_limit: 1,
+                before_context: 1,
+                after_context: 1,
+                trim_whitespace: true,
+                time_budget_ms: 0,
+                ..Default::default()
+            };
+            let mut seen = std::collections::HashSet::new();
+            loop {
+                let result = if mode.is_some() {
+                    picker.grep(&query, &options)
+                } else {
+                    picker.multi_grep(&["Needle", "Absent"], &[], &options)
+                };
+                assert_eq!(result.matches.len(), 1, "{mode:?} {definition_mode:?}");
+                let matched = &result.matches[0];
+                let definition_only = definition_mode == DefinitionMode::DefinitionOnly;
+                assert_eq!(matched.line_number, if definition_only { 51 } else { 1 });
+                assert_eq!(matched.is_definition, definition_only);
+                assert!(!matched.line_content.starts_with(' '));
+                if mode != Some(GrepMode::Fuzzy) {
+                    assert_eq!(matched.context_after.len(), 1);
+                    assert_eq!(matched.context_before.len(), usize::from(definition_only));
+                }
+                assert!(seen.insert(result.files[matched.file_index].relative_path(&picker)));
+                if result.next_file_offset == 0 {
+                    break;
+                }
+                assert!(result.next_file_offset > options.file_offset);
+                options.file_offset = result.next_file_offset;
+            }
+            assert_eq!(seen.len(), 3);
+        }
+    }
+}
+
+#[test]
 fn test_replace_newline_escapes() {
     // Single \n → multiline: replaced with a real newline at byte 3
     assert_eq!(

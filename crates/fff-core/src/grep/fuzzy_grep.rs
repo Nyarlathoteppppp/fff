@@ -309,6 +309,14 @@ pub(super) fn fuzzy_grep_search<'a>(
                         let (ln, bo) = line_meta[idx];
                         let match_byte_offsets =
                             char_indices_to_byte_offsets(display_line, &match_indices.indices);
+                        let Some(is_definition) = options.classify_definitions.classify_match(
+                            file,
+                            display_line,
+                            &match_byte_offsets,
+                            true,
+                        ) else {
+                            continue;
+                        };
                         let col = match_byte_offsets
                             .first()
                             .map(|r| r.0 as usize)
@@ -319,7 +327,7 @@ pub(super) fn fuzzy_grep_search<'a>(
                             line_number: ln,
                             col,
                             byte_offset: bo,
-                            is_definition: false,
+                            is_definition,
                             line_content: display_line.to_string(),
                             match_byte_offsets,
                             fuzzy_score: Some(match_indices.score),
@@ -327,15 +335,11 @@ pub(super) fn fuzzy_grep_search<'a>(
                             context_after: Vec::new(),
                         });
 
-                        if !options.classify_definitions.is_filtered()
-                            && max_matches_per_file != 0
-                            && file_matches.len() >= max_matches_per_file
-                        {
+                        if max_matches_per_file != 0 && file_matches.len() >= max_matches_per_file {
                             break;
                         }
                     }
 
-                    super::grep::classify_matches(file, &mut file_matches, options);
                     if file_matches.is_empty() {
                         return None;
                     }

@@ -88,4 +88,90 @@ mod tests {
         assert!(!is_definition_match(language, line, &[(3, 3)], true));
         assert!(!is_definition_match(255, line, &[(3, 7)], true));
     }
+
+    #[test]
+    fn generic_bounds_and_swift_class_properties_keep_the_declared_name() {
+        for (filename, line, expected) in [
+            (
+                "x.ts",
+                "const user_file = <T extends () => void>(callback: T) => callback;",
+                true,
+            ),
+            (
+                "x.ts",
+                "user_file<T extends () => void>(callback: T) {}",
+                true,
+            ),
+            (
+                "x.ts",
+                "const user_file = <T extends Array<() => void>>(callback: T) => callback;",
+                true,
+            ),
+            (
+                "x.ts",
+                "other<T extends () => user_file>(callback: T) {}",
+                false,
+            ),
+            (
+                "x.kt",
+                "fun <T : (Int) -> Unit> user_file(callback: T) {}",
+                true,
+            ),
+            (
+                "x.kt",
+                "fun <T : (Int) -> user_file> other(callback: T) {}",
+                false,
+            ),
+            ("x.swift", "public class var user_file: Int { 1 }", true),
+            (
+                "x.swift",
+                "public class var other: user_file { value }",
+                false,
+            ),
+            ("x.swift", "public class func user_file() {}", true),
+            ("x.swift", "public class user_file {}", true),
+        ] {
+            let start = line.find("user_file").unwrap() as u32;
+            for fuzzy in [false, true] {
+                assert_eq!(
+                    is_definition_match(
+                        Language::from_filename(filename) as u8,
+                        line.as_bytes(),
+                        &[(start, start + 9)],
+                        fuzzy,
+                    ),
+                    expected,
+                    "{filename}: {line}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn qualified_cpp_names_require_declaration_evidence() {
+        for (line, name, expected) in [
+            ("    std::sort(", "sort", false),
+            ("    ns::Type::method(", "method", false),
+            ("    ns::Type::method(items);", "method", false),
+            ("void ns::Type::method(", "method", true),
+            (
+                "std::vector<int> ns::Type::method() const {",
+                "method",
+                true,
+            ),
+            ("Type::Type() {", "Type", true),
+            ("Type::~Type() {", "Type", true),
+            ("ns::Type::Type(", "Type", true),
+        ] {
+            let start = line.rfind(name).unwrap() as u32;
+            let end = start + name.len() as u32;
+            for fuzzy in [false, true] {
+                assert_eq!(
+                    is_definition_match(Language::C as u8, line.as_bytes(), &[(start, end)], fuzzy),
+                    expected,
+                    "{line}",
+                );
+            }
+        }
+    }
 }

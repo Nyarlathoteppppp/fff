@@ -24,7 +24,9 @@ pub(super) fn strip_line_terminators(bytes: &[u8]) -> &[u8] {
     &bytes[..len]
 }
 
-pub(super) struct SinkState {
+pub(super) struct SinkState<'a> {
+    pub(super) file: &'a crate::types::FileItem,
+    pub(super) definition_mode: super::DefinitionMode,
     pub(super) file_index: usize,
     pub(super) matches: Vec<GrepMatch>,
     pub(super) max_matches: usize,
@@ -32,7 +34,7 @@ pub(super) struct SinkState {
     pub(super) after_context: usize,
 }
 
-impl SinkState {
+impl SinkState<'_> {
     #[inline]
     pub(super) fn prepare_line<'a>(
         line_bytes: &'a [u8],
@@ -60,9 +62,10 @@ impl SinkState {
         byte_offset: u64,
         line_content: String,
         match_byte_offsets: SmallVec<[(u32, u32); 4]>,
+        is_definition: bool,
         context_before: Vec<String>,
         context_after: Vec<String>,
-    ) {
+    ) -> bool {
         self.matches.push(GrepMatch {
             file_index: self.file_index,
             line_number,
@@ -71,10 +74,11 @@ impl SinkState {
             line_content,
             match_byte_offsets,
             fuzzy_score: None,
-            is_definition: false,
+            is_definition,
             context_before,
             context_after,
         });
+        self.max_matches == 0 || self.matches.len() < self.max_matches
     }
 
     /// Extract context lines from the full buffer around a matched region.

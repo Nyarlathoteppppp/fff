@@ -28,9 +28,11 @@ where
             return false;
         }
         let start = self.pos;
-        let prefix = self
-            .identifier()
-            .is_some_and(|next| Self::is_declaration_prefix(&self.line[next]));
+        let prefix = self.identifier().is_some_and(|next| {
+            let word = &self.line[next];
+            Self::is_declaration_prefix(word)
+                || (Self::LANGUAGE == Language::Swift && word == b"var")
+        });
         self.pos = start;
         prefix
     }
@@ -210,16 +212,25 @@ where
 
     pub(super) fn c_function(&mut self, modifiers: bool) -> Option<Range<usize>> {
         let mut names = 0;
-        let mut last = None;
+        let mut last: Option<Range<usize>> = None;
+        let mut qualified = false;
+        let mut constructor = false;
         loop {
             if let Some(name) = self.identifier() {
-                names += 1;
+                constructor = qualified
+                    && last
+                        .as_ref()
+                        .is_some_and(|parent| self.line[parent.clone()] == self.line[name.clone()]);
+                if !qualified {
+                    names += 1;
+                }
+                qualified = false;
                 last = Some(name);
             } else {
                 match self.peek()? {
                     b'(' => break,
                     b'*' | b'&' | b'~' | b'?' | b'^' => self.pos += 1,
-                    b':' if self.eat(b"::") => {}
+                    b':' if self.eat(b"::") => qualified = true,
                     b'<' => self.group(b'<', b'>')?,
                     b'[' => self.group(b'[', b']')?,
                     _ => return None,
@@ -227,7 +238,7 @@ where
             }
         }
         let name = last?;
-        if names < 2 && !modifiers {
+        if names < 2 && !modifiers && !constructor {
             return None;
         }
         // An unfinished parameter list can continue on the following line.
@@ -378,7 +389,7 @@ where
                 self.pos += bracket;
                 if self.line[self.pos] == open {
                     depth += 1;
-                } else {
+                } else if close != b'>' || !matches!(self.line[self.pos - 1], b'-' | b'=') {
                     depth -= 1;
                 }
                 self.pos += 1;
