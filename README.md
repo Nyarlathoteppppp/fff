@@ -517,6 +517,8 @@ Definition classification accepts source lines up to 256 bytes, including indent
 
 Supported language families are Rust, Python, Go, JavaScript/TypeScript, Lua, C/C++/Objective-C, Java/C#/Dart/Groovy, Kotlin, Scala, Swift, Ruby, Elixir, Zig, PHP, shell, OCaml/ReScript/F#, and Haskell. The byte-keyword rules in [`definition/languages.rs`](crates/fff-core/src/definition/languages.rs) compile into per-language checkers. Each checker has fixed grammar constants and returns a boolean without a runtime rule dispatcher. Language detection checks at most the last eight filename bytes against a compile-time suffix table. Unknown extensions and extensionless filenames are not classified. `definition_only` excludes them before sorting, pagination, or content reads, and preserves explicit file constraints on empty results.
 
+Identifier scanning uses compile-time byte tables for short tokens, then checks 16 bytes at a time with NEON on little-endian ARM64 or SSE2 on x86-64. Other targets use the scalar table. Loads stay within the source slice, including the final partial block. The parser uses `memchr` for quotes and bracket groups and does not allocate.
+
 Files are flagged during scanning. A Rust byte parser uses SIMD-backed delimiter searches on matched lines before pagination, including common modifiers, methods, and function assignments. Matches must overlap the declared name: `user_file` recognizes `fn user_file`, `mod user_file`, and `fn test_user_file`. Implementation and extension blocks stay with ordinary matches. In fuzzy mode, every matched character must fall inside the declared name; matches spread across the name and its arguments, receiver, or return type are ordinary matches. Classification adds no file reads or heap allocations. This is a line heuristic; multiline declarations and surrounding comment or string context can be missed.
 
 Per-call override:
@@ -979,7 +981,7 @@ Bug reports and pull requests welcome. Agentic coding tools are welcome to be us
 
 Run `make bench-definition` for Criterion benchmarks of Rust, JavaScript, and Python declarations and references. Each case measures classification through `FileItem::is_definition_match`, with match ranges prepared before timing. The `mixed_256` cases classify shuffled batches of 256 lines; their throughput is reported in lines per second. File indexing, I/O, and finding query matches are excluded.
 
-The `indented_*_bytes` cases measure the 255/256/257-byte boundary and rejection of 1 KiB and 16 KiB lines.
+The `identifier_*_bytes` cases measure names of 16, 32, and 96 bytes. The `indented_*_bytes` cases measure the 255/256/257-byte boundary and rejection of 1 KiB and 16 KiB lines.
 
 ```sh
 make bench-definition BENCH_ARGS='definition/rust --noplot'

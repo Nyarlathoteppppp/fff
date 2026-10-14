@@ -342,6 +342,7 @@ where
         Some(name)
     }
 
+    #[inline(always)]
     pub(super) fn identifier(&mut self) -> Option<std::ops::Range<usize>> {
         self.whitespace();
         if self.line[self.pos..].starts_with(b"r#") {
@@ -355,14 +356,7 @@ where
         {
             return None;
         }
-        self.pos += 1;
-        while self
-            .line
-            .get(self.pos)
-            .is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_' || *b == b'$' || *b >= 128)
-        {
-            self.pos += 1;
-        }
+        self.pos = super::scan::identifier_end(self.line, self.pos + 1);
         Some(start..self.pos)
     }
 

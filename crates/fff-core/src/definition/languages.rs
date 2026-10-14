@@ -44,6 +44,7 @@ macro_rules! languages {
             }
         }
 
+        #[inline]
         pub(crate) fn is_definition_match(
             language: u8,
             line: &[u8],
@@ -53,6 +54,12 @@ macro_rules! languages {
             if line.len() > 256 {
                 return false;
             }
+            classify(language, line, ranges, fuzzy)
+        }
+
+        // Keep the parser's stack frame off the long-line rejection path.
+        #[inline(never)]
+        fn classify(language: u8, line: &[u8], ranges: &[(u32, u32)], fuzzy: bool) -> bool {
             match language {
                 $(id if id == Language::$language as u8 => {
                     super::parser::Parser::<{ Language::$language as u8 }>::new(line)

@@ -1,6 +1,7 @@
 mod languages;
 mod parser;
 mod rules;
+mod scan;
 mod suffix;
 
 pub(crate) use languages::{Language, is_definition_match};
