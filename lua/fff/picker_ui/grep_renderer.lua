@@ -9,8 +9,11 @@ local fuzzy = require('fff.fuzzy')
 local file_renderer = require('fff.picker_ui.file_renderer')
 local tresitter_highlight = require('fff.treesitter_hl')
 
+---@class fff.grep.Match: FileItem
+---@field is_definition boolean
+
 ---@class fff.grep.SearchResult
----@field items table[] Array of grep match items
+---@field items fff.grep.Match[] Array of grep match items
 ---@field total_matched number Total matches found in this call
 ---@field total_files_searched number Files actually searched in this call
 ---@field total_files number Total indexed files
@@ -101,7 +104,7 @@ end
 
 --- Build the file group header line using the same layout as file_renderer.
 --- Delegates to file_renderer.render_line (with combo disabled).
----@param item FileItem Grep match
+---@param item fff.grep.Match Grep match
 ---@param ctx table Render context
 ---@return string The header line string
 local function build_group_header(item, ctx)
@@ -110,7 +113,7 @@ local function build_group_header(item, ctx)
 end
 
 --- Apply highlights for a file group header line using file_renderer.
----@param item FileItem Grep match item
+---@param item fff.grep.Match Grep match item
 ---@param ctx ListRenderContext Render context
 ---@param buf number Buffer handle
 ---@param ns_id number Namespace id
@@ -290,7 +293,7 @@ end
 --- Render a single item's lines (called by list_renderer).
 --- Returns 2 lines [header, match] for the first match of a file group,
 --- or 1 line [match] for subsequent matches in the same file.
----@param item FileItem Grep match item
+---@param item fff.grep.Match Grep match item
 ---@param ctx table Render context
 ---@param item_idx number 1-based item index in ctx.items
 ---@return string[]
@@ -319,7 +322,7 @@ function M.render_line(item, ctx, item_idx)
 end
 
 --- Apply highlights for rendered lines (called by list_renderer).
----@param item FileItem Grep match item
+---@param item fff.grep.Match Grep match item
 ---@param ctx ListRenderContext Render context
 ---@param item_idx number 1-based item index
 ---@param buf number Buffer handle
