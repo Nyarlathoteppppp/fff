@@ -1117,7 +1117,9 @@ export default function fffExtension(pi: ExtensionAPI) {
           classifyDefinitions:
             stage === "definitions" || stage === "fuzzy_definitions"
               ? "definition_only"
-              : "classify",
+              : stage === "normal"
+                ? "classify"
+                : "usage_only",
         });
         if (!page.ok) throw new Error(page.error);
         result = page.value;
