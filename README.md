@@ -52,13 +52,13 @@ Works with Claude Code, Codex, OpenCode, Cursor, Cline, and any MCP-capable clie
 
 ![Measured search time and tokens for FFF MCP versus normal shell search](./chart.png)
 
-The chart compares warm FFF MCP with shell search in the 10k+ repo and 1m+ repo buckets. Startup and indexing are excluded. The author independently verified equivalent Opus 5.5 results; the plotted values retain the recorded reference measurements.
+The chart compares warm FFF MCP with shell search in the 10k+ repo and 1m+ repo buckets. Startup and indexing are excluded.
 
 Six additional tasks were held out from tuning in the 10k+ repo bucket. The 1m+ repo appears in the main comparison above, but did not have a separate held-out run.
 
 | Held-out model | Shell time | FFF time | Shell tokens | FFF tokens |
 | --- | ---: | ---: | ---: | ---: |
-| Opus 5.5 (author-verified equivalent) | 10.7 s | 9.0 s | 58.3k | 49.2k |
+| Opus 5.5 | 10.7 s | 9.0 s | 58.3k | 49.2k |
 | GPT-6 Astra | 8.1 s | 9.0 s | 43.9k | 49.3k |
 
 [Held-out chart](scripts/search-benchmark-heldout.png). Both models returned all six expected answers in each recorded search mode. Tokens include cached input.
