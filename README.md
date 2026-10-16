@@ -52,7 +52,16 @@ Works with Claude Code, Codex, OpenCode, Cursor, Cline, and any MCP-capable clie
 
 ![Measured search time and tokens for FFF MCP versus normal shell search](./chart.png)
 
-The chart compares FFF MCP with shell search in the 10k+ repo and 1m+ repo buckets. It shows Opus 5.5 and GPT-6-Astra with startup and indexing excluded. The author independently verified equivalent Opus 5.5 results; the plotted values retain the recorded reference measurements. See the [method and reproduction commands](scripts/README.md) and [validation on six tasks held out from tuning](scripts/search-benchmark-heldout.png).
+The chart compares warm FFF MCP with shell search in the 10k+ repo and 1m+ repo buckets. Startup and indexing are excluded. The author independently verified equivalent Opus 5.5 results; the plotted values retain the recorded reference measurements.
+
+Six additional tasks were held out from tuning in the 10k+ repo bucket. The 1m+ repo appears in the main comparison above, but did not have a separate held-out run.
+
+| Held-out model | Shell time | FFF time | Shell tokens | FFF tokens |
+| --- | ---: | ---: | ---: | ---: |
+| Opus 5.5 (author-verified equivalent) | 10.7 s | 9.0 s | 58.3k | 49.2k |
+| GPT-6 Astra | 8.1 s | 9.0 s | 43.9k | 49.3k |
+
+[Held-out chart without text](scripts/search-benchmark-heldout.png). Both models returned all six expected answers in each recorded search mode. Tokens include cached input.
 
 ### One-line install
 
@@ -104,7 +113,7 @@ command = "/opt/homebrew/bin/fff-mcp"
 
 Use the actual installed path for your system, then restart Codex or start a new task so it loads the server.
 
-On Codex versions that support `omit_tools_from`, add `omit_tools_from = ["deferred"]` to this server's configuration to expose FFF's tools immediately. This avoids a separate tool-discovery round trip. The agent benchmark records whether this setting is enabled.
+On Codex versions that support `omit_tools_from`, add `omit_tools_from = ["deferred"]` to this server's configuration to expose FFF's tools immediately. This avoids a separate tool-discovery round trip. The measurements above use this setting.
 
 Once the server is connected, ask the agent to "use fff". The MCP tools are `grep`, `find_files`, and `multi_grep`.
 

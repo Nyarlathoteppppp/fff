@@ -95,16 +95,6 @@ bench-grep:
 bench-definition:
 	cargo bench -p fff-search --no-default-features --features zlob --bench definition_bench -- $(BENCH_ARGS)
 
-.PHONY: bench-agent-search bench-agent-session bench-agent-chart
-bench-agent-search:
-	python3 scripts/benchmark-search.py $(BENCH_ARGS)
-
-bench-agent-session:
-	python3 scripts/benchmark-mcp-session.py $(BENCH_ARGS)
-
-bench-agent-chart:
-	python3 scripts/analyze-results.py $(BENCH_ARGS)
-
 # Watcher rescan harness: asserts that editing, build output, git activity and
 # preview reads all stay on the incremental path instead of re-walking the tree.
 test-rescan:

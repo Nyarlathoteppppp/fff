@@ -1,6 +1,0 @@
-{
-  "model_labels": {
-    "gpt-6.1-sol": "Opus 5.5*"
-  },
-  "note": "*Opus 5.5: author-reported equivalent results. Plotted values use the recorded reference runs."
-}
