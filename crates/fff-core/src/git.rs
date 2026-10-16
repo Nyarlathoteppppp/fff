@@ -136,7 +136,10 @@ impl GitStatusCache {
             return Ok(Self(map));
         }
 
+        // literal paths make libgit2 use a sorted pathlist instead of wildmatching
+        // every entry against every pathspec (O(entries * paths), minutes on 80k paths)
         let mut status_options = default_status_options();
+        status_options.disable_pathspec_match(true);
         for path in paths {
             status_options.pathspec(path.as_ref().strip_prefix(&workdir)?);
         }
@@ -298,5 +301,40 @@ mod tests {
                 status
             );
         }
+    }
+
+    // Paths are literal: `[id]` must not glob-match `i`/`d`, and new/deleted files still resolve.
+    #[test]
+    fn status_for_paths_treats_paths_literally() {
+        let tmp = TempDir::new().unwrap();
+        let base = crate::path_utils::canonicalize(tmp.path()).unwrap();
+
+        for n in ["app/[id]/page.tsx", "app/i/page.tsx", "gone.rs"] {
+            let p = base.join(n);
+            fs::create_dir_all(p.parent().unwrap()).unwrap();
+            fs::write(&p, "x\n").unwrap();
+        }
+        git(&base, &["init", "-b", "main"]);
+        git(&base, &["add", "-A"]);
+        git(&base, &["commit", "-m", "seed", "--no-gpg-sign"]);
+
+        fs::write(base.join("app/[id]/page.tsx"), "y\n").unwrap();
+        fs::remove_file(base.join("gone.rs")).unwrap();
+        fs::create_dir_all(base.join("fresh/dir")).unwrap();
+        fs::write(base.join("fresh/dir/new.rs"), "z\n").unwrap();
+
+        let repo = Repository::open(&base).unwrap();
+        let paths: Vec<PathBuf> = ["app/[id]/page.tsx", "gone.rs", "fresh/dir/new.rs"]
+            .iter()
+            .map(|n| base.join(n))
+            .collect();
+        let cache = GitStatusCache::git_status_for_paths(&repo, &paths).unwrap();
+
+        let status = |n: &str| cache.lookup_status(&base.join(n));
+        assert!(status("app/[id]/page.tsx").is_some_and(|s| s.contains(Status::WT_MODIFIED)));
+        assert!(status("gone.rs").is_some_and(|s| s.contains(Status::WT_DELETED)));
+        assert!(status("fresh/dir/new.rs").is_some_and(|s| s.contains(Status::WT_NEW)));
+        assert_eq!(status("app/i/page.tsx"), None);
+        assert_eq!(cache.statuses_len(), 3);
     }
 }
