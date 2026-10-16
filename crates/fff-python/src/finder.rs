@@ -373,7 +373,7 @@ impl FileFinder {
                 fuzzy_options(
                     max_threads,
                     current_file.as_deref(),
-                    picker.base_path(),
+                    picker.shared_base_path(),
                     page_index,
                     page_size,
                     defaulted_i32(combo_boost_score_multiplier, DEFAULT_COMBO_BOOST_MULTIPLIER),
@@ -425,7 +425,7 @@ impl FileFinder {
                 fuzzy_options(
                     max_threads,
                     current_file.as_deref(),
-                    picker.base_path(),
+                    picker.shared_base_path(),
                     page_index,
                     page_size,
                     0,
@@ -478,7 +478,7 @@ impl FileFinder {
                 fuzzy_options(
                     max_threads,
                     current_file.as_deref(),
-                    picker.base_path(),
+                    picker.shared_base_path(),
                     page_index,
                     page_size,
                     0,
@@ -540,7 +540,7 @@ impl FileFinder {
                     fuzzy_options(
                         max_threads,
                         current_file.as_deref(),
-                        picker.base_path(),
+                        picker.shared_base_path(),
                         page_index,
                         page_size,
                         defaulted_i32(combo_boost_score_multiplier, DEFAULT_COMBO_BOOST_MULTIPLIER),
@@ -910,7 +910,7 @@ impl FileFinder {
             let file_path = fff::path_utils::canonicalize(&selected_file_path).map_err(py_err)?;
             let project_path = {
                 let guard = picker.read().map_err(py_err)?;
-                guard.as_ref().map(|p| p.base_path().to_path_buf())
+                guard.as_ref().map(|p| p.shared_base_path().to_path_buf())
             };
             let project_path = match project_path {
                 Some(p) => p,
@@ -936,7 +936,7 @@ impl FileFinder {
         py.detach(move || -> PyResult<Option<String>> {
             let project_path = {
                 let guard = picker.read().map_err(py_err)?;
-                guard.as_ref().map(|p| p.base_path().to_path_buf())
+                guard.as_ref().map(|p| p.shared_base_path().to_path_buf())
             };
             let project_path = match project_path {
                 Some(p) => p,

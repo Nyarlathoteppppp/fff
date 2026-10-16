@@ -21,6 +21,54 @@ pub(crate) fn tune_libgit2_for_local_reads() {
     });
 }
 
+// Repository layout resolved from a single `Repository::discover`
+#[derive(Debug, Clone)]
+pub(crate) struct GitDiscovery {
+    pub(crate) workdir: PathBuf,
+    // Per-worktree git dir holding HEAD, index and logs
+    pub(crate) git_dir: PathBuf,
+    // Checkout owning the history shared by every worktree, set only for linked worktrees
+    shared_root: Option<PathBuf>,
+}
+
+impl GitDiscovery {
+    pub(crate) fn discover(base_path: &Path) -> Option<Self> {
+        let repo = Repository::discover(base_path).ok()?;
+        let workdir = crate::path_utils::normalize(repo.workdir()?.to_path_buf());
+        let shared_root = repo
+            .is_worktree()
+            .then(|| main_checkout_root(&repo))
+            .map(crate::path_utils::normalize);
+
+        Some(Self {
+            workdir,
+            git_dir: repo.path().to_path_buf(),
+            shared_root,
+        })
+    }
+
+    // `base_path` re-rooted into the shared checkout, `None` outside linked worktrees
+    pub(crate) fn shared_base(&self, base_path: &Path) -> Option<PathBuf> {
+        let shared_root = self.shared_root.as_ref()?;
+        let relative = match base_path.strip_prefix(&self.workdir) {
+            Ok(relative) => relative.to_path_buf(),
+            // libgit2 reports a symlink-free workdir
+            Err(_) => crate::path_utils::canonicalize(base_path)
+                .ok()?
+                .strip_prefix(&self.workdir)
+                .ok()?
+                .to_path_buf(),
+        };
+
+        // `join("")` appends a separator, changing the history key of the main checkout
+        Some(if relative.as_os_str().is_empty() {
+            shared_root.clone()
+        } else {
+            shared_root.join(relative)
+        })
+    }
+}
+
 pub(crate) fn default_status_options() -> StatusOptions {
     let mut opts = StatusOptions::new();
     opts.include_untracked(true)
@@ -195,6 +243,23 @@ pub fn format_git_status(status: Option<Status>) -> &'static str {
     format_git_status_opt(status).unwrap_or("unknown")
 }
 
+// Main checkout twin of `path` for a picker at `base_path` keyed by `shared_base`
+pub(crate) fn shared_twin(path: &Path, base_path: &Path, shared_base: &Path) -> Option<PathBuf> {
+    Some(shared_base.join(path.strip_prefix(base_path).ok()?))
+}
+
+// Same as git's main worktree: the common dir without its `.git` suffix, so bare
+// and separate git dirs key the shared history by the common dir itself.
+fn main_checkout_root(repo: &Repository) -> PathBuf {
+    let common_dir: PathBuf = repo.commondir().components().collect();
+    match common_dir.parent() {
+        Some(main_root) if common_dir.file_name().is_some_and(|name| name == ".git") => {
+            main_root.to_path_buf()
+        }
+        _ => common_dir,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -213,6 +278,76 @@ mod tests {
             .output()
             .unwrap();
         assert!(out.status.success(), "git {args:?} failed");
+    }
+
+    fn seed_repo(dir: &Path) {
+        fs::create_dir_all(dir.join("src")).unwrap();
+        fs::write(dir.join("src/lib.rs"), "x\n").unwrap();
+        git(dir, &["init", "-b", "main"]);
+        git(dir, &["add", "-A"]);
+        git(dir, &["commit", "-m", "seed", "--no-gpg-sign"]);
+    }
+
+    #[test]
+    fn linked_worktree_shares_the_main_checkout_history() {
+        let tmp = TempDir::new().unwrap();
+        let root = crate::path_utils::canonicalize(tmp.path()).unwrap();
+        let main = root.join("main");
+        let worktree = root.join("feature");
+        seed_repo(&main);
+        git(
+            &main,
+            &[
+                "worktree",
+                "add",
+                worktree.to_str().unwrap(),
+                "-b",
+                "feature",
+            ],
+        );
+
+        let main_git = GitDiscovery::discover(&main).unwrap();
+        assert_eq!(main_git.git_dir, main.join(".git"));
+        assert_eq!(main_git.shared_base(&main), None);
+
+        let worktree_git = GitDiscovery::discover(&worktree.join("src")).unwrap();
+        assert_eq!(worktree_git.workdir, worktree);
+        assert_eq!(worktree_git.git_dir, main.join(".git/worktrees/feature"));
+        // compared as strings: a trailing separator would split the query history key
+        assert_eq!(
+            worktree_git.shared_base(&worktree).unwrap().as_os_str(),
+            main.as_os_str()
+        );
+        assert_eq!(
+            worktree_git.shared_base(&worktree.join("src")),
+            Some(main.join("src"))
+        );
+    }
+
+    #[test]
+    fn bare_and_separate_git_dir_worktrees_share_the_common_dir() {
+        let tmp = TempDir::new().unwrap();
+        let root = crate::path_utils::canonicalize(tmp.path()).unwrap();
+
+        seed_repo(&root.join("origin"));
+        git(&root, &["clone", "--bare", "origin", "bare.git"]);
+        git(&root.join("bare.git"), &["worktree", "add", "../bare-wt"]);
+        let bare_wt = root.join("bare-wt");
+        let bare_git = GitDiscovery::discover(&bare_wt).unwrap();
+        assert_eq!(bare_git.shared_base(&bare_wt), Some(root.join("bare.git")));
+
+        fs::create_dir_all(root.join("separate")).unwrap();
+        git(&root, &["init", "--separate-git-dir=sep.git", "separate"]);
+        fs::write(root.join("separate/a.rs"), "x\n").unwrap();
+        git(&root.join("separate"), &["add", "-A"]);
+        git(
+            &root.join("separate"),
+            &["commit", "-m", "seed", "--no-gpg-sign"],
+        );
+        git(&root.join("separate"), &["worktree", "add", "../sep-wt"]);
+        let sep_wt = root.join("sep-wt");
+        let sep_git = GitDiscovery::discover(&sep_wt).unwrap();
+        assert_eq!(sep_git.shared_base(&sep_wt), Some(root.join("sep.git")));
     }
 
     #[test]

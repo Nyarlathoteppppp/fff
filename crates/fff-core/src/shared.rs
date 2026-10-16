@@ -15,17 +15,17 @@ use crate::scan::ScanJob;
 use crate::watch::{WatchEvent, WatchId, WatchOptions, WatchRegistry};
 use git2::Repository;
 
-/// Poll `.git/index.lock` until it disappears (git write completed), giving up
+/// Poll `<git_dir>/index.lock` until it disappears (git write completed), giving up
 /// after [`GIT_LOCK_MAX_WAIT`]. Used by [`SharedPicker::refresh_git_status`]
 /// to avoid reading a half-updated index when the watcher fires mid-`git add`.
 ///
 /// The wait is bounded and cheap: the lock file is typically cleared within
 /// a few milliseconds of the git command exiting.
-fn wait_for_git_index_lock_release(git_root: &Path) {
+fn wait_for_git_index_lock_release(git_dir: &Path) {
     const GIT_LOCK_POLL: Duration = Duration::from_millis(10);
     const GIT_LOCK_MAX_WAIT: Duration = Duration::from_millis(500);
 
-    let lock = git_root.join(".git").join("index.lock");
+    let lock = git_dir.join("index.lock");
     // Fast path: no lock present.
     if !lock.exists() {
         return;
@@ -365,10 +365,11 @@ impl SharedFilePicker {
         };
 
         let repo = git_root.as_deref().and_then(|root| {
-            wait_for_git_index_lock_release(root);
-            Repository::open(root)
+            let repo = Repository::open(root)
                 .inspect_err(|e| tracing::error!(?e, "Failed to open repo for git refresh"))
-                .ok()
+                .ok()?;
+            wait_for_git_index_lock_release(repo.path());
+            Some(repo)
         });
 
         let git_status = repo.as_ref().and_then(|repo| {
@@ -423,9 +424,8 @@ impl SharedFilePicker {
             return Ok(());
         };
 
-        wait_for_git_index_lock_release(&git_root);
-
         let repo = Repository::open(&git_root)?;
+        wait_for_git_index_lock_release(repo.path());
         let status = GitStatusCache::git_status_for_paths(&repo, paths)?;
 
         let mut guard = self.write()?;
