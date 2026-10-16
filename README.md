@@ -61,7 +61,7 @@ Six additional tasks were held out from tuning in the 10k+ repo bucket. The 1m+ 
 | Opus 5.5 (author-verified equivalent) | 10.7 s | 9.0 s | 58.3k | 49.2k |
 | GPT-6 Astra | 8.1 s | 9.0 s | 43.9k | 49.3k |
 
-[Held-out chart without text](scripts/search-benchmark-heldout.png). Both models returned all six expected answers in each recorded search mode. Tokens include cached input.
+[Held-out chart](scripts/search-benchmark-heldout.png). Both models returned all six expected answers in each recorded search mode. Tokens include cached input.
 
 ### One-line install
 
