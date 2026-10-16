@@ -908,13 +908,15 @@ impl FileFinder {
 
         py.detach(move || -> PyResult<bool> {
             let file_path = fff::path_utils::canonicalize(&selected_file_path).map_err(py_err)?;
-            let project_path = {
+            let (project_path, file_path) = {
                 let guard = picker.read().map_err(py_err)?;
-                guard.as_ref().map(|p| p.shared_base_path().to_path_buf())
-            };
-            let project_path = match project_path {
-                Some(p) => p,
-                None => return Ok(false),
+                let Some(picker) = guard.as_ref() else {
+                    return Ok(false);
+                };
+                (
+                    picker.shared_base_path().to_path_buf(),
+                    picker.shared_path_for(&file_path).unwrap_or(file_path),
+                )
             };
 
             let mut qt_guard = query_tracker.write().map_err(py_err)?;

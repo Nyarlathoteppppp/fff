@@ -1103,13 +1103,16 @@ pub unsafe extern "C" fn fff_track_query(
         Err(e) => return FffResult::err(&format!("Failed to canonicalize path: {}", e)),
     };
 
-    let project_path = {
+    let (project_path, file_path) = {
         let guard = match inst.picker.read() {
             Ok(g) => g,
             Err(_) => return FffResult::ok_int(0),
         };
         match guard.as_ref() {
-            Some(p) => p.shared_base_path().to_path_buf(),
+            Some(p) => (
+                p.shared_base_path().to_path_buf(),
+                p.shared_path_for(&file_path).unwrap_or(file_path),
+            ),
             None => return FffResult::ok_int(0),
         }
     };

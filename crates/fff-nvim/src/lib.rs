@@ -725,28 +725,26 @@ pub fn cancel_scan(_: &Lua, _: ()) -> LuaResult<bool> {
 }
 
 pub fn track_query_completion(_: &Lua, (query, file_path): (String, String)) -> LuaResult<bool> {
-    // Everything runs on a background thread — including the
-    // `FILE_PICKER.read()` used to fetch `project_path`. Doing that read
-    // on the main (UI) thread stalled nvim whenever a reindex writer was
-    // in flight: parking_lot's fair queue makes a read block behind a
-    // pending writer, so the main thread would freeze for the full
-    // duration of the scan.
+    // Keep picker locks off the UI thread; a queued scan writer can block readers.
     let query_tracker = QUERY_TRACKER.clone();
     std::thread::spawn(move || {
-        let project_path = match FILE_PICKER.read() {
-            Ok(guard) => match *guard {
-                Some(ref picker) => picker.shared_base_path().to_path_buf(),
-                None => return,
-            },
-            Err(_) => return,
-        };
-
         let file_path = match fff::path_utils::canonicalize(&file_path) {
             Ok(path) => path,
             Err(e) => {
                 tracing::warn!(?file_path, error = ?e, "Failed to canonicalize file path for tracking");
                 return;
             }
+        };
+
+        let (project_path, file_path) = match FILE_PICKER.read() {
+            Ok(guard) => match guard.as_ref() {
+                Some(picker) => (
+                    picker.shared_base_path().to_path_buf(),
+                    picker.shared_path_for(&file_path).unwrap_or(file_path),
+                ),
+                None => return,
+            },
+            Err(_) => return,
         };
 
         if let Ok(mut guard) = query_tracker.write()

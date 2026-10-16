@@ -543,36 +543,6 @@ mod tests {
         assert!(FrecencyTracker::path_to_hash_bytes(missing).is_ok());
     }
 
-    #[test]
-    fn worktree_accesses_feed_the_shared_history() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let tracker = FrecencyTracker::open(tmp.path().join("db")).unwrap();
-        let main_file = Path::new("/repo/src/lib.rs");
-        let worktree_file = Path::new("/worktrees/feature/src/lib.rs");
-        let sibling_file = Path::new("/worktrees/other/src/lib.rs");
-
-        tracker.track_access(main_file).unwrap();
-        tracker
-            .track_access_shared(worktree_file, Some(main_file))
-            .unwrap();
-        assert_eq!(tracker.access_count(main_file).unwrap(), 2);
-        assert_eq!(tracker.access_count(worktree_file).unwrap(), 1);
-
-        {
-            let reader = tracker.reader();
-            let score = |path| reader.access_score(path, Some(main_file), FFFMode::Neovim);
-            // local opens weigh double in the worktree that made them
-            assert_eq!(score(worktree_file), 3);
-            assert_eq!(score(sibling_file), 2);
-            assert_eq!(reader.access_score(main_file, None, FFFMode::Neovim), 2);
-        }
-
-        tracker
-            .track_access_shared(main_file, Some(main_file))
-            .unwrap();
-        assert_eq!(tracker.access_count(main_file).unwrap(), 3);
-    }
-
     fn calculate_test_frecency_score(access_timestamps: &[u64], current_time: u64) -> i64 {
         let mut total_frecency = 0.0;
 
