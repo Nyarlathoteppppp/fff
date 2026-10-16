@@ -2,7 +2,6 @@
 
 use fff_query_parser::{Constraint, GitStatusFilter};
 use smallvec::SmallVec;
-use std::borrow::Cow;
 
 use crate::git::is_modified_status;
 use crate::simd_path::ArenaPtr;
@@ -157,8 +156,13 @@ pub(crate) type GlobPattern = globset::GlobMatcher;
 /// `PERIOD` on top of `RECOMMENDED`: we filter an index that already contains
 /// dotfiles, so `**/x` must cross `.config`/`.pi` components. Without it zlob
 /// applies fnmatch's leading-dot rule and diverges from the globset backend.
+///
+/// `MATCH_BASENAME`: a pattern without `/` matches the file name at any depth
+/// (`libc.so*` finds `hash-glibc/lib/libc.so.6`), as in `rg -g` and gitignore.
 #[cfg(feature = "zlob")]
-const GLOB_FLAGS: zlob::ZlobFlags = zlob::ZlobFlags::RECOMMENDED.union(zlob::ZlobFlags::PERIOD);
+const GLOB_FLAGS: zlob::ZlobFlags = zlob::ZlobFlags::RECOMMENDED
+    .union(zlob::ZlobFlags::PERIOD)
+    .union(zlob::ZlobFlags::MATCH_BASENAME);
 
 /// How `Constraint::Glob` is evaluated for each item.
 enum GlobStrategy {
@@ -486,7 +490,7 @@ fn precompute_masks(rest: &[&Constraint<'_>], paths: &[&str]) -> Vec<Vec<bool>> 
     let mut out = Vec::new();
     for c in rest {
         walk_globs(c, &mut |pattern| {
-            out.push(match_glob_pattern(&unanchor_glob(pattern), paths))
+            out.push(match_glob_pattern(pattern, paths))
         });
     }
     out
@@ -495,9 +499,7 @@ fn precompute_masks(rest: &[&Constraint<'_>], paths: &[&str]) -> Vec<Vec<bool>> 
 fn compile_globs(rest: &[&Constraint<'_>]) -> Vec<Option<GlobPattern>> {
     let mut out = Vec::new();
     for c in rest {
-        walk_globs(c, &mut |pattern| {
-            out.push(compile_one(&unanchor_glob(pattern)))
-        });
+        walk_globs(c, &mut |pattern| out.push(compile_one(pattern)));
     }
     out
 }
@@ -512,17 +514,6 @@ fn walk_globs<F: FnMut(&str)>(c: &Constraint<'_>, f: &mut F) {
     }
 }
 
-/// Slash-less globs match by basename (`foo*` -> `**/foo*`), like `*.ext` does.
-/// Leading `*` already crosses `/`; braces stay anchored for `{src,lib}` dir alternatives.
-fn unanchor_glob(pattern: &str) -> Cow<'_, str> {
-    let b = pattern.as_bytes();
-    if b.first() == Some(&b'*') || b.contains(&b'/') || b.contains(&b'{') {
-        Cow::Borrowed(pattern)
-    } else {
-        Cow::Owned(format!("**/{pattern}"))
-    }
-}
-
 #[cfg(feature = "zlob")]
 pub(crate) fn compile_one(pattern: &str) -> Option<GlobPattern> {
     zlob::ZlobPattern::compile(pattern, GLOB_FLAGS).ok()
@@ -530,9 +521,21 @@ pub(crate) fn compile_one(pattern: &str) -> Option<GlobPattern> {
 
 #[cfg(all(not(feature = "zlob"), feature = "ripgrep"))]
 pub(crate) fn compile_one(pattern: &str) -> Option<GlobPattern> {
-    globset::Glob::new(pattern)
-        .ok()
-        .map(|g| g.compile_matcher())
+    build_glob(pattern).map(|g| g.compile_matcher())
+}
+
+/// globset has no basename mode, so a pattern without `/` becomes `**/pattern`
+/// with `*` kept inside one component. This is zlob's `MATCH_BASENAME`.
+#[cfg(all(not(feature = "zlob"), feature = "ripgrep"))]
+fn build_glob(pattern: &str) -> Option<globset::Glob> {
+    if pattern.contains('/') {
+        globset::Glob::new(pattern).ok()
+    } else {
+        globset::GlobBuilder::new(&format!("**/{pattern}"))
+            .literal_separator(true)
+            .build()
+            .ok()
+    }
 }
 
 /// Build a `paths.len()`-sized bitmap. Vec<bool> beats AHashSet ~2× in the per-item
@@ -554,7 +557,7 @@ fn match_glob_pattern(pattern: &str, paths: &[&str]) -> Vec<bool> {
 #[cfg(all(not(feature = "zlob"), feature = "ripgrep"))]
 fn match_glob_pattern(pattern: &str, paths: &[&str]) -> Vec<bool> {
     let mut mask = vec![false; paths.len()];
-    let Ok(glob) = globset::Glob::new(pattern) else {
+    let Some(glob) = build_glob(pattern) else {
         return mask;
     };
     let matcher = glob.compile_matcher();
@@ -1010,5 +1013,28 @@ mod tests {
             )))]),
             vec!["src/main.rs"]
         );
+    }
+
+    #[test]
+    fn test_slash_less_glob_does_not_match_directory_names() {
+        let arena_ptr = ArenaPtr::null();
+        let items = vec![
+            TestItem {
+                relative_path: "lib/x.rs",
+                file_name: "x.rs",
+            },
+            TestItem {
+                relative_path: "src/libx.rs",
+                file_name: "libx.rs",
+            },
+        ];
+        let got: Vec<&str> =
+            apply_constraints(&items, &[Constraint::Glob("*lib*")], arena_ptr, arena_ptr)
+                .unwrap_or_default()
+                .iter()
+                .map(|i| i.relative_path)
+                .collect();
+        // Like `rg -g`, a pattern without `/` sees only the file name.
+        assert_eq!(got, vec!["src/libx.rs"]);
     }
 }
