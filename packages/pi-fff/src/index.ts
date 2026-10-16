@@ -1101,7 +1101,7 @@ export default function fffExtension(pi: ExtensionAPI) {
       const preferDefinitions = stage !== "normal";
       const suggestion = preferDefinitions
         ? (resumed?.suggestion ?? {
-            query: buildQuery(undefined, pattern, params.exclude, activeCwd),
+            query: buildQuery(undefined, pattern, params.exclude, aux?.root ?? activeCwd),
             pattern,
             mode,
           })
