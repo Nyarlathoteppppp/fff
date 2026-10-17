@@ -21,6 +21,54 @@ pub(crate) fn tune_libgit2_for_local_reads() {
     });
 }
 
+// Repository layout resolved from a single `Repository::discover`
+#[derive(Debug, Clone)]
+pub(crate) struct GitDiscovery {
+    pub(crate) workdir: PathBuf,
+    // Per-worktree git dir holding HEAD, index and logs
+    pub(crate) git_dir: PathBuf,
+    // Checkout owning the history shared by every worktree, set only for linked worktrees
+    shared_root: Option<PathBuf>,
+}
+
+impl GitDiscovery {
+    pub(crate) fn discover(base_path: &Path) -> Option<Self> {
+        let repo = Repository::discover(base_path).ok()?;
+        let workdir = crate::path_utils::normalize(repo.workdir()?.to_path_buf());
+        let shared_root = repo
+            .is_worktree()
+            .then(|| main_checkout_root(&repo))
+            .map(crate::path_utils::normalize);
+
+        Some(Self {
+            workdir,
+            git_dir: repo.path().to_path_buf(),
+            shared_root,
+        })
+    }
+
+    // `base_path` re-rooted into the shared checkout, `None` outside linked worktrees
+    pub(crate) fn shared_base(&self, base_path: &Path) -> Option<PathBuf> {
+        let shared_root = self.shared_root.as_ref()?;
+        let relative = match base_path.strip_prefix(&self.workdir) {
+            Ok(relative) => relative.to_path_buf(),
+            // libgit2 reports a symlink-free workdir
+            Err(_) => crate::path_utils::canonicalize(base_path)
+                .ok()?
+                .strip_prefix(&self.workdir)
+                .ok()?
+                .to_path_buf(),
+        };
+
+        // `join("")` appends a separator, changing the history key of the main checkout
+        Some(if relative.as_os_str().is_empty() {
+            shared_root.clone()
+        } else {
+            shared_root.join(relative)
+        })
+    }
+}
+
 pub(crate) fn default_status_options() -> StatusOptions {
     let mut opts = StatusOptions::new();
     opts.include_untracked(true)
@@ -193,6 +241,23 @@ pub fn format_git_status_opt(status: Option<Status>) -> Option<&'static str> {
 
 pub fn format_git_status(status: Option<Status>) -> &'static str {
     format_git_status_opt(status).unwrap_or("unknown")
+}
+
+// Main checkout twin of `path` for a picker at `base_path` keyed by `shared_base`
+pub(crate) fn shared_twin(path: &Path, base_path: &Path, shared_base: &Path) -> Option<PathBuf> {
+    Some(shared_base.join(path.strip_prefix(base_path).ok()?))
+}
+
+// Same as git's main worktree: the common dir without its `.git` suffix, so bare
+// and separate git dirs key the shared history by the common dir itself.
+fn main_checkout_root(repo: &Repository) -> PathBuf {
+    let common_dir: PathBuf = repo.commondir().components().collect();
+    match common_dir.parent() {
+        Some(main_root) if common_dir.file_name().is_some_and(|name| name == ".git") => {
+            main_root.to_path_buf()
+        }
+        _ => common_dir,
+    }
 }
 
 #[cfg(test)]
