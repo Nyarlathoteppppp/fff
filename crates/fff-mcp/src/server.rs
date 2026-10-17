@@ -1778,6 +1778,25 @@ mod tests {
     }
 
     #[test]
+    fn expanded_definition_context_keeps_long_line_matches_visible() {
+        let body = format!(
+            "fn Needle() {{\n    let x = \"{}\"; Needle();\n}}\n",
+            "x".repeat(400)
+        );
+        let (_dir, server) = definition_server(&[("a.rs".into(), body.as_str())]);
+        let params = serde_json::from_value(serde_json::json!({
+            "query": "Needle", "mode": "literal",
+        }))
+        .unwrap();
+        let text = response_text(server.grep(Parameters(params)).unwrap());
+        assert!(text.contains("1: fn Needle()"), "{text}");
+        assert!(text.contains("  2| …"), "{text}");
+        assert!(text.contains("\"; Needle();"), "{text}");
+        assert_eq!(text.matches("Needle()").count(), 2, "{text}");
+        assert!(!text.contains(" 2: "), "{text}");
+    }
+
+    #[test]
     fn definition_context_budget_does_not_hide_matches() {
         let content: Vec<_> = (0..20)
             .map(|i| {

@@ -261,6 +261,14 @@ impl GrepFormatter<'_> {
 
         let mut compacted = 0usize;
         let mut body_lines = std::collections::HashSet::new();
+        let matching_lines: std::collections::HashMap<_, _> = if auto_expand_defs {
+            items
+                .iter()
+                .map(|m| ((m.file_index, m.line_number), m.match_byte_offsets.as_ref()))
+                .collect()
+        } else {
+            std::collections::HashMap::new()
+        };
         for (shown_count, &idx) in sorted_items.iter().enumerate() {
             let m = &items[idx];
             // Already printed inside an expanded definition body.
@@ -309,10 +317,13 @@ impl GrepFormatter<'_> {
                         break;
                     }
                     body_lines.insert((m.file_index, start_line + i as u64));
+                    let ranges = matching_lines
+                        .get(&(m.file_index, start_line + i as u64))
+                        .copied();
                     match_lines.push(format!(
                         "  {}| {}",
                         start_line + i as u64,
-                        trauncate_line_for_ai(ctx, None, MAX_LINE_LEN)
+                        trauncate_line_for_ai(ctx, ranges, MAX_LINE_LEN)
                     ));
                 }
             }
