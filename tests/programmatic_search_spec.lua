@@ -140,13 +140,13 @@ describe('programmatic search APIs', function()
           modes[#modes + 1] = select(12, ...)
           return original(...)
         end
-        local ok, err = pcall(function()
+        local search_ok, err = pcall(function()
           fff.content_search(marker)
           vim.g.fff = vim.tbl_deep_extend('force', saved or {}, { grep = { classify_definitions = true } })
           fff.content_search(marker)
         end)
         fuzzy.live_grep, vim.g.fff = original, saved
-        assert(ok, err)
+        assert(search_ok, err)
         assert.are.same({ 'off', 'classify' }, modes)
       end)
 
