@@ -151,7 +151,7 @@ Single-query definition search tries these stages in order:
 4. Fuzzy ordinary matches, labeled “Maybe you meant these other matches”.
 5. If all four stages found nothing, suggest files from a broader search. Exclusions remain active. Filename-only suggestions are labeled as unverified.
 
-A stage advances only after its complete search returns no matches. A partial page keeps its current stage, and a stage that returned matches never broadens when pagination ends. Cursors preserve the stage. The first four stages keep the original file constraints; the final suggestions can come from elsewhere in the indexed project and include a notice. The multi-pattern tools accept the same flag but use only the first two stages; their patterns remain literal.
+Exact stages advance only after a complete search returns no matches. Each fuzzy stage has a two-second budget and can advance with zero matches before scanning the full index. Cursors preserve the stage, and a stage that returned matches never broadens when pagination ends. The first four stages keep the original file constraints; the final suggestions can come from elsewhere in the indexed project and include a notice. The multi-pattern tools accept the same flag but use only the first two stages; their patterns remain literal.
 
 MCP's broader suggestions can include up to eight matching source lines. MCP tries partial module names before searching the whole index. Pi returns suggested filenames.
 
