@@ -234,16 +234,11 @@ impl BackgroundWatcher {
             config,
         )?;
 
-        // The .git directory is excluded from the file list but we still need
-        // to observe changes that affect git status (staging, unstaging,
-        // committing, branch switches, merges, etc)
-        let git_paths = git_status_paths(git_workdir.as_ref());
-
         if use_recursive {
             // FSEvents restarts the stream on every watch() and can lose a stop issued right after
             // a start, hanging the join forever (notify-rs/notify#942). Register paths in one batch.
-            let mut ops = vec![PathOp::watch_recursive(base_path.clone())];
-            ops.extend(git_paths.into_iter().map(PathOp::watch_non_recursive));
+            let ops = std::iter::once(PathOp::watch_recursive(base_path.clone()))
+                .chain(git_status_paths(git_workdir.as_ref()).map(PathOp::watch_non_recursive));
             if let Err(e) = debouncer.update_paths(ops) {
                 match e.origin {
                     Some(ref op) if op.as_path() != base_path => {
@@ -305,11 +300,10 @@ impl BackgroundWatcher {
                 "File watcher initialized"
             );
 
-            for path in git_paths {
-                if let Err(e) = debouncer.watch(&path, RecursiveMode::NonRecursive) {
-                    warn!("Failed to watch {}: {}", path.display(), e);
-                }
-            }
+            // The .git directory is excluded from the file list but we still need
+            // to observe changes that affect git status (staging, unstaging,
+            // committing, branch switches, merges, etc)
+            watch_git_status_paths(&mut debouncer, git_workdir.as_ref());
         }
 
         Ok(debouncer)
@@ -1039,16 +1033,15 @@ fn is_dotgit_change_affecting_status(changed: &Path, repo: &Option<Repository>) 
     false
 }
 
-fn git_status_paths(git_workdir: Option<&PathBuf>) -> Vec<PathBuf> {
-    let Some(workdir) = git_workdir else {
-        return Vec::new();
-    };
-
-    let git_dir = workdir.join(".git");
-    if !git_dir.is_dir() {
-        return Vec::new();
+fn watch_git_status_paths(debouncer: &mut Debouncer, git_workdir: Option<&PathBuf>) {
+    for path in git_status_paths(git_workdir) {
+        if let Err(e) = debouncer.watch(&path, RecursiveMode::NonRecursive) {
+            warn!("Failed to watch {}: {}", path.display(), e);
+        }
     }
+}
 
+fn git_status_paths(git_workdir: Option<&PathBuf>) -> impl Iterator<Item = PathBuf> {
     // We have tried to be smart about the internal git state but
     // it appeared more harmful that it's worth it, so we just watch
     // for the most obvious paths like HEAD, MERGE_HEAD, index.lock
@@ -1058,12 +1051,12 @@ fn git_status_paths(git_workdir: Option<&PathBuf>) -> Vec<PathBuf> {
     // `is_dotgit_change_affecting_status` — would never be delivered without
     // watching `.git/logs` itself. On macOS/Windows the recursive base watch
     // already covers it; an extra watch is harmless there.
-    let logs_dir = git_dir.join("logs");
-    if logs_dir.is_dir() {
-        vec![git_dir, logs_dir]
-    } else {
-        vec![git_dir]
-    }
+    let git_dir = git_workdir.map(|w| w.join(".git")).filter(|d| d.is_dir());
+    let logs_dir = git_dir
+        .as_ref()
+        .map(|d| d.join("logs"))
+        .filter(|d| d.is_dir());
+    git_dir.into_iter().chain(logs_dir)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
