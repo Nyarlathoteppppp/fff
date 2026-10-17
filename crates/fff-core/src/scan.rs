@@ -326,6 +326,7 @@ impl ScanJob {
 
             if let Ok(mut guard) = shared_picker.write()
                 && let Some(picker) = guard.as_mut()
+                && !signals.cancelled.load(Ordering::Acquire)
             {
                 picker.set_bigram_index(index);
             }
