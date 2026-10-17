@@ -1342,19 +1342,10 @@ mod tests {
             },
         )
         .unwrap();
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-        while !shared
-            .read()
-            .unwrap()
-            .as_ref()
-            .is_some_and(|p| !p.is_scan_active() && p.bigram_index().is_some())
-        {
-            assert!(
-                std::time::Instant::now() < deadline,
-                "bigram index was not built"
-            );
-            std::thread::sleep(std::time::Duration::from_millis(20));
-        }
+        assert!(
+            shared.wait_for_indexing_complete(std::time::Duration::from_secs(10)),
+            "content indexing did not finish"
+        );
         (dir, FffServer::new(shared))
     }
 
