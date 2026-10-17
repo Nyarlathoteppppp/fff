@@ -1025,7 +1025,7 @@ export default function fffExtension(pi: ExtensionAPI) {
     promptSnippet: "Grep contents",
     promptGuidelines: (names) => [
       `${names.grep}: prefer bare identifiers as patterns. Literal queries are most efficient.`,
-      `${names.grep}: use definitions_only: true to try declarations, exact matches, fuzzy declarations, then fuzzy matches. Each fallback starts only after a completed search with no matches and includes a notice.`,
+      `${names.grep}: use definitions_only: true to try declarations, exact matches, fuzzy declarations, then fuzzy matches. Exact stages finish before fallback; fuzzy stages have a two-second budget. Empty stages advance with a notice.`,
       `${names.grep}: use path for include ('src/', '*.ts') and exclude for noise ('test/,*.min.js').`,
       `${names.grep}: caseSensitive: true when you need exact case (smart-case otherwise).`,
       `${names.grep}: after 1-2 greps, read the top match instead of more greps.`,
