@@ -264,6 +264,7 @@ where
                         | b"__declspec"
                         | b"alignas"
                         | b"asm"
+                        | b"__asm__"
                         | b"volatile"
                 )
         {

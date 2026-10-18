@@ -381,6 +381,21 @@ mod tests {
     }
 
     #[test]
+    fn c_asm_labels_are_not_function_names() {
+        assert_definitions(
+            "x.h",
+            &[
+                ("extern int errno __asm__(\"errno\");", "__asm__", false),
+                (
+                    "extern int read_value(void) __asm__(\"read_value_impl\");",
+                    "read_value",
+                    true,
+                ),
+            ],
+        );
+    }
+
+    #[test]
     fn c_builtin_names_are_valid_java_methods() {
         assert_definitions(
             "x.java",
@@ -388,6 +403,7 @@ mod tests {
                 ("public int sizeof() { return 4; }", "sizeof", true),
                 ("public int alignof() { return 4; }", "alignof", true),
                 ("public String typeof() { return name; }", "typeof", true),
+                ("public String __asm__() { return name; }", "__asm__", true),
             ],
         );
     }
