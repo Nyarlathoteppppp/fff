@@ -87,7 +87,7 @@ Set `definitions_only: true` to try matching declarations, ordinary exact matche
 
 Parameters:
 - `pattern` — search text or regex
-- `definitions_only` — try declarations, exact matches, fuzzy declarations, then fuzzy matches; report fallbacks
+- `definitions_only` — try declarations first and report fallbacks
 - `path` — directory/file constraint (e.g. `src/`, `*.ts`)
 - `ignoreCase` — force case-insensitive
 - `literal` — treat as literal string (default: true)

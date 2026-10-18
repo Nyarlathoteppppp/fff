@@ -1024,7 +1024,6 @@ describe("ffgrep per-file cap (#825)", () => {
 for (const name of ["ffgrep", "fff-multi-grep"]) {
   describe(`${name} definitions_only`, () => {
     const normal = name === "ffgrep" ? "classify" : "off";
-    const fallbackMode = name === "ffgrep" ? "classify" : "off";
     const params =
       name === "ffgrep"
         ? { pattern: "Needle", path: "src/" }
@@ -1090,8 +1089,8 @@ for (const name of ["ffgrep", "fff-multi-grep"]) {
       );
       expect(calls.map((call) => call.classifyDefinitions)).toEqual([
         "definition_only",
-        fallbackMode,
-        fallbackMode,
+        normal,
+        normal,
       ]);
       expect(calls[2].cursor).toEqual(next);
       expect(second.content[0].text).not.toContain("No matching definitions");
@@ -1121,7 +1120,7 @@ for (const name of ["ffgrep", "fff-multi-grep"]) {
       expect(calls.map((call) => call.classifyDefinitions)).toEqual([
         "definition_only",
         "definition_only",
-        fallbackMode,
+        normal,
       ]);
       expect(calls[2].cursor).toBeNull();
       expect(second.content[0].text).toContain("No matching definitions found");
