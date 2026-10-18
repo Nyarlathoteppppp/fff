@@ -20,7 +20,7 @@ const MAX_CONTEXT_LINES: usize = 100;
 const FUZZY_STAGE_BUDGET_MS: u64 = 2_000;
 // Grep pages print every match, so a huge maxResults would flood the caller.
 const MAX_GREP_PAGE: usize = 200;
-// Declarations must start at the name, so each page reads more files; keep the default short.
+// Definition-only searches read past usages to fill a page.
 const DEFINITION_PAGE: usize = 30;
 
 fn normalize_max_results(raw: Option<f64>, default: usize) -> usize {
