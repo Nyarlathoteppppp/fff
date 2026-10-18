@@ -3050,6 +3050,8 @@ mod tests {
             (vec!["src/?.rs"], vec![0]),
             (vec!["src/*/foo.rs"], vec![2]),
             (vec!["src/**/*.rs"], vec![0, 1, 2, 3, 6, 7]),
+            (vec!["**/[^b].rs"], vec![0]),
+            (vec!["**/[^a]*.rs"], vec![1, 2, 3, 4, 5]),
             (vec!["src/*a[,]b.rs"], vec![6]),
             (vec!["src/*.rs", "lib/**"], vec![0, 1, 4, 5, 6]),
             (vec!["{src,lib}/*.rs"], vec![0, 1, 4, 6]),
