@@ -928,9 +928,6 @@ impl FffServer {
         self.bump_activity();
         self.wait_for_scan(SCAN_READY_TIMEOUT)?;
 
-        let parsed = QueryParser::new(AiGrepConfig).parse(&params.query);
-        let grep_text = parsed.grep_text();
-
         let mode = match params.mode {
             Some(PatternMode::Regex) => GrepMode::Regex,
             // Plain grep reads `\n` as a newline, so keep literal backslashes in a regex.
@@ -939,8 +936,14 @@ impl FffServer {
                 GrepMode::Regex
             }
             Some(PatternMode::Literal) => GrepMode::PlainText,
-            _ if has_regex_metacharacters(&grep_text) => GrepMode::Regex,
-            _ => GrepMode::PlainText,
+            _ => {
+                let parsed = QueryParser::new(AiGrepConfig).parse(&params.query);
+                if has_regex_metacharacters(&parsed.grep_text()) {
+                    GrepMode::Regex
+                } else {
+                    GrepMode::PlainText
+                }
+            }
         };
 
         let mut result = self.perform_grep(&params, mode)?;
