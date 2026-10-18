@@ -137,7 +137,9 @@ MCP also accepts ripgrep-style searches without putting scope tokens in the patt
 {"query":"retry|backoff","mode":"regex","paths":["src","lib"],"globs":["*.rs","!**/tests/**"],"context":3}
 ```
 
-`mode: "regex"` and `mode: "literal"` preserve the query, including whitespace. Both default to case-sensitive matching; `case` also accepts `"insensitive"` and `"smart"`. Without a mode, the existing smart-case and inline-constraint behavior remains available. Any `paths` or `globs` value also keeps the query verbatim, so inline constraint tokens become part of the pattern. Regex matches stay within one line unless the pattern contains `\n`. `paths` contains checkout-relative files or directories. Positive `globs` are alternatives; exclusions take priority. `hidden: false` skips hidden paths unless explicitly included by a path or glob. Searches stay within the index: unlike ripgrep's `-g`, globs cannot restore files excluded by the index's ignore rules. Ripgrep-specific `.rgignore` files can also make its file inventory differ.
+`mode: "regex"` and `mode: "literal"` preserve the query, including whitespace, and default to case-sensitive matching. `case` also accepts `"insensitive"` and `"smart"`. Without a mode, smart-case and inline constraints remain available. Supplying `paths` or `globs` keeps the query verbatim, so inline constraint tokens become search text. Regex matches stay within one line unless the pattern contains `\n`.
+
+`paths` contains checkout-relative files or directories. Positive `globs` are alternatives; exclusions take priority. `hidden: false` skips hidden paths unless a path or glob explicitly includes them. Globs cannot restore files excluded by the index's ignore rules. Ripgrep-specific `.rgignore` files can also make its file inventory differ.
 
 Grep returns up to 100 matching lines per page by default and at most 200. Use `maxResults` and the returned cursor to continue, including within a file. `max_matches_per_file` explicitly limits matches per file. Small content result sets include bounded surrounding source automatically. `context`, `before_context`, and `after_context` request explicit context; overlapping windows are merged. Set `context: 0` for matching lines only.
 
@@ -147,8 +149,8 @@ Single-query definition search tries these stages in order:
 
 1. Matching declarations.
 2. Ordinary exact matches, with a notice that no matching declarations were found.
-3. Fuzzy declarations, labeled “Maybe you meant these definitions”.
-4. Fuzzy ordinary matches, labeled “Maybe you meant these other matches”.
+3. Fuzzy declarations, labeled "Maybe you meant these definitions".
+4. Fuzzy ordinary matches, labeled "Maybe you meant these other matches".
 5. If all four stages found nothing, suggest files from a broader search. Exclusions remain active. Filename-only suggestions are labeled as unverified.
 
 Exact stages advance only after a complete search returns no matches. Each fuzzy stage has a two-second budget and can advance with zero matches before scanning the full index. Cursors preserve the stage, and a stage that returned matches never broadens when pagination ends. The first four stages keep the original file constraints; the final suggestions can come from elsewhere in the indexed project and include a notice. The multi-pattern tools accept the same flag but use only the first two stages; their patterns remain literal.

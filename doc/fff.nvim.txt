@@ -360,6 +360,7 @@ list is configurable via `grep.modes`, and single-mode setups hide the
 indicator entirely. `definition_only` uses plain substring matching and returns
 only matched declarations, regardless of `grep.classify_definitions`. Its
 status label uses `hl.grep_definition_active` (default: `DiagnosticOk`).
+Regex matches stay within one line unless the pattern contains `\n`.
 
 `grep.classify_definitions` groups matching definitions first within each page.
 It defaults to `false`. Set it to `true` or `'classify'` to enable grouping, or
