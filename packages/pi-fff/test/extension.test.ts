@@ -1170,12 +1170,13 @@ for (const name of ["ffgrep", "fff-multi-grep"]) {
 }
 
 for (const fuzzyDefinitions of [true, false]) {
-  test(`definition fallback preserves fuzzy ${fuzzyDefinitions ? "definitions" : "matches"} across pages`, async () => {
+  test(`definition fallback preserves fuzzy ${fuzzyDefinitions ? "definitions" : "matches"} across empty partial pages`, async () => {
     const calls: { query: string; options: any }[] = [];
     const firstHit = fuzzyDefinitions ? 3 : 4;
     grepImpl = (query, options) => {
       calls.push({ query, options });
       if (calls.length < firstHit) return grepPage();
+      if (calls.length === firstHit + 1) return grepPage(undefined, { _offset: 13 });
       return grepPage(
         fuzzyDefinitions ? "fn Needle() {}" : "Needle();",
         calls.length === firstHit ? { _offset: 9 } : null,
@@ -1204,22 +1205,34 @@ for (const fuzzyDefinitions of [true, false]) {
       { pattern: params.pattern, cursor },
       abortOptions().signal,
     );
+    const continuation = second.content[0].text.match(/cursor="([^"]+)"/);
+    expect(continuation).not.toBeNull();
+    const third = await tool.execute(
+      "after-timeout",
+      { pattern: params.pattern, cursor: continuation![1] },
+      abortOptions().signal,
+    );
     expect(calls.map((call) => call.options.mode)).toEqual([
       "plain",
       "plain",
-      ...Array(firstHit - 1).fill("fuzzy"),
+      ...Array(firstHit).fill("fuzzy"),
     ]);
     expect(calls.map((call) => call.options.classifyDefinitions)).toEqual([
       "definition_only",
       "classify",
       "definition_only",
-      ...(fuzzyDefinitions ? ["definition_only"] : ["classify", "classify"]),
+      ...(fuzzyDefinitions
+        ? ["definition_only", "definition_only"]
+        : ["classify", "classify", "classify"]),
     ]);
     expect(new Set(calls.map((call) => call.query))).toEqual(
       new Set(["src/ !test/ " + params.pattern]),
     );
     expect(calls[firstHit].options.cursor).toEqual({ _offset: 9 });
+    expect(calls[firstHit + 1].options.cursor).toEqual({ _offset: 13 });
     expect(second.content[0].text).toContain("Maybe you meant");
+    expect(third.content[0].text).toContain("Needle");
+    expect(finders[0].fileSearch).not.toHaveBeenCalled();
     await shutdown(setup);
   });
 }

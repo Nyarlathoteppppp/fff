@@ -1126,7 +1126,7 @@ export default function fffExtension(pi: ExtensionAPI) {
         });
         if (!page.ok) throw new Error(page.error);
         result = page.value;
-        if (isFuzzyGrepStage(stage) && result.items.length === 0)
+        if (isFuzzyGrepStage(stage) && !foundMatches && result.items.length === 0)
           result.nextCursor = null;
         const next = nextGrepStage(stage);
         if (result.items.length > 0 || result.nextCursor || foundMatches || !next) break;
