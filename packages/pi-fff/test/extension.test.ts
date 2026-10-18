@@ -1074,7 +1074,7 @@ for (const name of ["ffgrep", "fff-multi-grep"]) {
       await shutdown(setup);
     });
 
-    test("lists files that define the exact name first on a page", async () => {
+    test("lists exact declarations first within their files and on a page", async () => {
       const definition = (
         relativePath: string,
         lineContent: string,
@@ -1093,7 +1093,15 @@ for (const name of ["ffgrep", "fff-multi-grep"]) {
         page.value.items = [
           definition("src/a.rs", "pub struct ValueCompletion {}", [11]),
           definition("src/c.rs", "pub struct ValueRef(pub Value);", [11, 24]),
-          definition("src/b.rs", "pub enum Value {", [9]),
+          definition("src/b.rs", "pub struct ValueExtra {}", [11]),
+          {
+            ...definition("src/b.rs", "pub enum Value {", [9]),
+            lineNumber: 3,
+            contextBefore: ["// before the enum"],
+            contextAfter: ["// after the enum"],
+          },
+          definition("src/d.rs", "pub struct ValueExtra {}", [11]),
+          { ...definition("src/d.rs", "pub enum Value {", [9]), lineNumber: 2 },
         ] as any;
         return page;
       });
@@ -1105,6 +1113,16 @@ for (const name of ["ffgrep", "fff-multi-grep"]) {
       const text = result.content[0].text;
       expect(text.indexOf("src/b.rs")).toBeGreaterThanOrEqual(0);
       expect(text.indexOf("src/b.rs")).toBeLessThan(text.indexOf("src/a.rs"));
+      expect(text.indexOf("src/b.rs")).toBeLessThan(text.indexOf("src/d.rs"));
+      expect(text.indexOf("src/d.rs")).toBeLessThan(text.indexOf("src/a.rs"));
+      expect(text.indexOf("3: pub enum Value")).toBeLessThan(
+        text.indexOf("1: pub struct ValueExtra"),
+      );
+      expect(text).toContain(
+        " 2- // before the enum\n 3: pub enum Value {\n 4- // after the enum",
+      );
+      expect(text.match(/src\/b\.rs/g)).toHaveLength(1);
+      expect(text.match(/src\/d\.rs/g)).toHaveLength(1);
       // A whole word inside a field type does not count as the declared name.
       expect(text.indexOf("src/a.rs")).toBeLessThan(text.indexOf("src/c.rs"));
       await shutdown(setup);

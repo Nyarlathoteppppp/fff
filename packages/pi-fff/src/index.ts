@@ -1719,20 +1719,32 @@ function nextGrepStage(stage: GrepStage): GrepStage | undefined {
   }
 }
 
-// Files that declare the whole matched word lead the page; the native order is kept otherwise.
+// Exact declarations lead each file, and files containing them lead the page.
 function exactDefinitionsFirst(items: GrepResult["items"]): GrepResult["items"] {
   const encoder = new TextEncoder();
-  const exact = new Set(
-    items
-      .filter((item) => {
-        const line = encoder.encode(item.lineContent);
-        return item.matchRanges.some(([start, end]) => declaresWord(line, start, end));
-      })
-      .map((item) => item.relativePath),
-  );
-  return [...items].sort(
-    (a, b) => Number(!exact.has(a.relativePath)) - Number(!exact.has(b.relativePath)),
-  );
+  const exact = new Set<GrepResult["items"][number]>();
+  const files = new Map<string, { order: number; exact: boolean }>();
+  for (const item of items) {
+    let file = files.get(item.relativePath);
+    if (!file) {
+      file = { order: files.size, exact: false };
+      files.set(item.relativePath, file);
+    }
+    const line = encoder.encode(item.lineContent);
+    if (item.matchRanges.some(([start, end]) => declaresWord(line, start, end))) {
+      exact.add(item);
+      file.exact = true;
+    }
+  }
+  return [...items].sort((a, b) => {
+    const aFile = files.get(a.relativePath)!;
+    const bFile = files.get(b.relativePath)!;
+    return (
+      Number(!aFile.exact) - Number(!bFile.exact) ||
+      aFile.order - bFile.order ||
+      Number(!exact.has(a)) - Number(!exact.has(b))
+    );
+  });
 }
 
 function isFuzzyGrepStage(stage: GrepStage): boolean {
