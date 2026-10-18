@@ -158,7 +158,6 @@ pub struct GrepFormatter<'a> {
     pub max_results: usize,
     pub show_context: bool,
     pub auto_expand_defs: bool,
-    pub auto_context: bool,
     pub picker: &'a FilePicker,
 }
 
@@ -173,7 +172,6 @@ impl GrepFormatter<'_> {
             max_results,
             show_context,
             auto_expand_defs,
-            auto_context,
             picker,
         } = *self;
 
@@ -203,7 +201,7 @@ impl GrepFormatter<'_> {
         {
             return text;
         }
-        if auto_context
+        if auto_expand_defs
             && items.len() <= 8
             && !items.iter().any(|m| m.is_definition)
             && let Some(text) =

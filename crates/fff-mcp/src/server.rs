@@ -602,7 +602,6 @@ impl FffServer {
                             max_results,
                             show_context,
                             auto_expand_defs: auto_expand,
-                            auto_context: auto_expand,
                             picker,
                         }
                         .format(&mut cs);
@@ -755,7 +754,6 @@ impl FffServer {
             max_results,
             show_context,
             auto_expand_defs: auto_expand,
-            auto_context: auto_expand,
             picker,
         }
         .format(&mut cs);
@@ -1073,7 +1071,6 @@ impl FffServer {
             max_results,
             show_context: !auto_expand && ctx_lines > 0,
             auto_expand_defs: auto_expand,
-            auto_context: auto_expand,
             picker,
         }
         .format(&mut cs);
@@ -1279,7 +1276,6 @@ fn format_broader_matches(
         max_results: 8,
         show_context: context.is_some_and(|(before, after)| before + after > 0),
         auto_expand_defs: context.is_none(),
-        auto_context: context.is_none(),
         picker,
     }
     .format(&mut CursorStore::new());
