@@ -273,8 +273,8 @@ where
         if self.group(b'(', b')').is_some() {
             match self.peek() {
                 Some(b',' | b')' | b'.') => return None,
-                // Prototypes sit at the top level or start with `virtual`/`explicit`; indented
-                // `static T x(args);` constructs a local instead.
+                // Accept unindented prototypes and virtual/explicit members;
+                // skip ambiguous indented declarations.
                 Some(b';')
                     if Self::LANGUAGE == Language::C
                         && (!(self.line.first().is_some_and(|b| !b.is_ascii_whitespace())
