@@ -30,10 +30,9 @@ macro_rules! declaration {
                         start < end && start as usize >= name.start && end as usize <= name.end
                     });
                 }
-                // Match the name prefix, ignoring leading underscores.
-                let underscores = self.line[name.clone()].iter().take_while(|&&b| b == b'_').count();
-                let first = name.start + underscores.min(name.len() - 1);
-                ranges.iter().any(|&(start, end)| (start as usize) <= first && (end as usize) > first)
+                ranges.iter().any(|&(start, end)| {
+                    start < end && (start as usize) < name.end && (end as usize) > name.start
+                })
             }
 
             fn declaration(&mut self) -> Option<std::ops::Range<usize>> {
