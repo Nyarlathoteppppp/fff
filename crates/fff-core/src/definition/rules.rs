@@ -30,8 +30,7 @@ macro_rules! declaration {
                         start < end && start as usize >= name.start && end as usize <= name.end
                     });
                 }
-                // The match must reach the name's first byte, so `Value` skips `ArgValueCompletion`.
-                // Leading underscores mark private names, so `xmlDict` still starts `_xmlDict`.
+                // Match the name prefix, ignoring leading underscores.
                 let underscores = self.line[name.clone()].iter().take_while(|&&b| b == b'_').count();
                 let first = name.start + underscores.min(name.len() - 1);
                 ranges.iter().any(|&(start, end)| (start as usize) <= first && (end as usize) > first)
