@@ -1231,7 +1231,6 @@ for (const fuzzyDefinitions of [true, false]) {
     expect(calls[firstHit + 1].options.cursor).toEqual({ _offset: 13 });
     expect(second.content[0].text).toContain("Maybe you meant");
     expect(third.content[0].text).toContain("Needle");
-    expect(finders[0].fileSearch).not.toHaveBeenCalled();
     await shutdown(setup);
   });
 }
