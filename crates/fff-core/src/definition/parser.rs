@@ -253,18 +253,19 @@ where
         }
         let name = last?;
         if names < 2 && !modifiers && !constructor
-            || matches!(
-                &self.line[name.clone()],
-                b"sizeof"
-                    | b"alignof"
-                    | b"decltype"
-                    | b"typeof"
-                    | b"__attribute__"
-                    | b"__declspec"
-                    | b"alignas"
-                    | b"asm"
-                    | b"volatile"
-            )
+            || Self::LANGUAGE == Language::C
+                && matches!(
+                    &self.line[name.clone()],
+                    b"sizeof"
+                        | b"alignof"
+                        | b"decltype"
+                        | b"typeof"
+                        | b"__attribute__"
+                        | b"__declspec"
+                        | b"alignas"
+                        | b"asm"
+                        | b"volatile"
+                )
         {
             return None;
         }

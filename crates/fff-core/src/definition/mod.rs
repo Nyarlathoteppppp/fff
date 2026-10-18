@@ -381,6 +381,18 @@ mod tests {
     }
 
     #[test]
+    fn c_builtin_names_are_valid_java_methods() {
+        assert_definitions(
+            "x.java",
+            &[
+                ("public int sizeof() { return 4; }", "sizeof", true),
+                ("public int alignof() { return 4; }", "alignof", true),
+                ("public String typeof() { return name; }", "typeof", true),
+            ],
+        );
+    }
+
+    #[test]
     fn namespace_reexports_define_their_alias() {
         assert_definitions(
             "x.ts",
