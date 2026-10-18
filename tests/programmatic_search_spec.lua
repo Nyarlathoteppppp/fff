@@ -140,11 +140,15 @@ describe('programmatic search APIs', function()
 
       it('fuzzy mode tolerates query typos', function()
         -- Drop a letter from the marker; fuzzy mode should still match.
-        local result = fff.content_search('canonicalize_pickr_path', { mode = 'fuzzy' })
+        local query = 'lua/ ' .. marker:gsub('fff', 'ff', 1)
+        local result = fff.content_search(query, { mode = 'fuzzy', time_budget_ms = 0 })
         assert.is_true(#result.items > 0, 'fuzzy content_search returned no matches')
+        local found_marker = false
         for _, item in ipairs(result.items) do
+          if item.line_content:find(marker, 1, true) then found_marker = true end
           assert.is_number(item.fuzzy_score)
         end
+        assert.is_true(found_marker, 'fuzzy content_search did not match the source marker')
       end)
 
       it('rejects invalid mode', function()
