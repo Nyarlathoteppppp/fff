@@ -1030,8 +1030,7 @@ export default function fffExtension(pi: ExtensionAPI) {
       `${names.grep}: if all stages find nothing, the tool suggests files from a broader search while preserving exclusions. Suggestions are not declaration results.`,
       `${names.grep}: keep module words in path, e.g. '**/*billing*client*/**'. Use exclude for noise ('test/,*.min.js').`,
       `${names.grep}: caseSensitive: true when you need exact case (smart-case otherwise).`,
-      `${names.grep}: returned source lines verify declaration locations. Do not re-read identical lines just to verify a location.`,
-      `${names.grep}: results include source lines. Read more only when you need context. Ranking includes recency, not semantic relevance.`,
+      `${names.grep}: returned source lines verify declaration locations. Do not re-read identical lines; read more only for additional context. Ranking includes recency, not semantic relevance.`,
     ],
     parameters: grepSchema,
 
