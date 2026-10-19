@@ -401,13 +401,14 @@ does not allocate.
 Files are flagged during scanning. A Rust byte parser uses SIMD-backed
 delimiter searches on matched lines before pagination, including common
 modifiers, methods, and function assignments. Matches must overlap the declared
-name: `user_file` recognizes `fn user_file`, `mod user_file`, and `fn
-test_user_file`. Implementation and extension blocks stay with ordinary
-matches. In fuzzy mode, every matched character must fall inside the declared
-name; matches spread across the name and its arguments, receiver, or return
-type are ordinary matches. Classification adds no file reads or heap
-allocations. This is a line heuristic; multiline declarations and surrounding
-comment or string context can be missed.
+name: `user_file` recognizes `fn user_file`, `mod user_file`, `fn user_file_test`,
+and `fn test_user_file`, but not `fn other(value: user_file)`. Implementation and
+extension blocks stay with ordinary matches. In fuzzy mode, every matched
+character must fall inside the declared name; matches spread across the name
+and its arguments, receiver, or return type are ordinary matches.
+Classification adds no file reads or heap allocations. This is a line
+heuristic; multiline declarations and surrounding comment or string context
+can be missed.
 
 Per-call override:
 

@@ -30,7 +30,9 @@ macro_rules! declaration {
                         start < end && start as usize >= name.start && end as usize <= name.end
                     });
                 }
-                ranges.iter().any(|&(start, end)| (start as usize) < name.end && (end as usize) > name.start)
+                ranges.iter().any(|&(start, end)| {
+                    start < end && (start as usize) < name.end && (end as usize) > name.start
+                })
             }
 
             fn declaration(&mut self) -> Option<std::ops::Range<usize>> {

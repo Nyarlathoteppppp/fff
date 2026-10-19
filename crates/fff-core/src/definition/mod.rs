@@ -101,6 +101,96 @@ mod tests {
     }
 
     #[test]
+    fn matches_must_overlap_the_declared_name() {
+        assert!(!is_definition_match(
+            Language::Rust as u8,
+            b"fn user_file() {}",
+            &[(5, 5)],
+            false
+        ));
+        for (filename, line, needle, expected) in [
+            ("x.rs", "fn user_file_test() {}", "user_file", true),
+            ("x.rs", "fn test_user_file_name() {}", "user_file", true),
+            ("x.rs", "fn test_user_file() {}", "user_file", true),
+            ("x.rs", "mod user_file {}", "user_file", true),
+            ("x.js", "function file_test() {}", "file", true),
+            ("x.js", "function test_file_name() {}", "file", true),
+            ("x.js", "function test_file() {}", "file", true),
+            ("x.py", "def file_test():", "file", true),
+            ("x.py", "def test_file_name():", "file", true),
+            ("x.py", "def test_file():", "file", true),
+            ("x.rs", "fn other() -> user_file {}", "user_file", false),
+            ("x.ts", "function other(): user_file {}", "user_file", false),
+            ("x.py", "def other() -> user_file:", "user_file", false),
+            ("x.rs", "fn other() {}", "fn", false),
+            ("x.js", "function other() {}", "function", false),
+            ("x.py", "def other():", "def", false),
+            ("x.rs", "user_file();", "user_file", false),
+            ("x.js", "user_file();", "user_file", false),
+            ("x.py", "user_file()", "user_file", false),
+            ("x.rs", "pub enum Value {", "Value", true),
+            ("x.rs", "pub enum ValueKind {", "Value", true),
+            ("x.rs", "pub enum Value {", "enum Value", true),
+            ("x.rs", "pub struct ArgValueCompletion<'a> {", "Value", true),
+            ("x.rs", "pub trait FromValue: Sized {", "Value", true),
+            ("x.rs", "fn value_of(v: Value) -> i64 {", "Value", false),
+            ("x.rs", "pub fn r#type() {}", "r#type", true),
+            (
+                "x.ts",
+                "export class UserController {",
+                "UserController",
+                true,
+            ),
+            (
+                "x.ts",
+                "export class AdminUserController {",
+                "UserController",
+                true,
+            ),
+            (
+                "x.ts",
+                "function handle(ctrl: UserController) {",
+                "UserController",
+                false,
+            ),
+            ("x.ts", "  #load() {", "#load", true),
+            ("x.lua", "function M.setup(opts)", "M.setup", true),
+            ("x.lua", "function M.setup(opts)", "setup", true),
+            ("x.zig", "pub const PageList = @This();", "Page", true),
+            ("x.zig", "fn getTabPage(self: *Self) void {", "Page", true),
+            ("x.h", "typedef struct AVFrame {", "AVFrame", true),
+            ("x.h", "struct _xmlDict {", "xmlDict", true),
+            ("x.h", "struct _xmlDict {", "_xmlDict", true),
+            ("x.h", "struct _xmlDict {", "Dict", true),
+            ("x.py", "def __init__(self):", "init", true),
+            ("x.h", "typedef struct MyAVPacketList {", "AVPacket", true),
+            (
+                "x.h",
+                "class BASE_EXPORT CommandLine {",
+                "BASE_EXPORT CommandLine",
+                true,
+            ),
+        ] {
+            let start = line.find(needle).unwrap() as u32;
+            let ranges = [(start, start + needle.len() as u32)];
+            let language = Language::from_filename(filename) as u8;
+            assert_eq!(
+                is_definition_match(language, line.as_bytes(), &ranges, false),
+                expected,
+                "{filename}: {needle} in {line}"
+            );
+        }
+        // Typo matching still accepts characters anywhere inside the name.
+        let line = b"pub struct ArgValueCompletion<'a> {";
+        assert!(is_definition_match(
+            Language::Rust as u8,
+            line,
+            &[(14, 19)],
+            true
+        ));
+    }
+
+    #[test]
     fn generic_bounds_and_swift_class_properties_keep_the_declared_name() {
         for (filename, line, expected) in [
             (
