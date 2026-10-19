@@ -317,7 +317,7 @@ Defaults are sensible. Override only what you care about.
         enforce_time_budget = false, -- apply time_budget_ms even before anything matched (off = zero-match queries scan everything)
         modes = { 'plain', 'regex', 'fuzzy', 'definition_only' },
         trim_whitespace = false,
-        classify_definitions = false, -- show matching definitions first within each page
+        classify_definitions = true, -- show matching definitions first within each page
         enable_filename_constraint = false, -- treat filename-like tokens (e.g. `score.rs`) in a grep query as a file-path filter scoping the search; off = searched as literal text
         location_format = ':%d:%d', -- printf format for line:col prefix in grep results, e.g. ':%d' for line-only
       },
@@ -363,9 +363,9 @@ status label uses `hl.grep_definition_active` (default: `DiagnosticOk`).
 Regex matches stay within one line unless the pattern contains `\n`.
 
 `grep.classify_definitions` groups matching definitions first within each page.
-It defaults to `false`. Set it to `true` or `'classify'` to enable grouping, or
-use `'definition_only'` or `'usage_only'` to filter the results. Classification
-uses one grep search per page without scanning ahead for definitions.
+It defaults to `true`. Set it to `false` to keep file order. It also accepts
+`'classify'`, `'definition_only'`, and `'usage_only'`. Classification uses one
+grep search per page without scanning ahead for definitions.
 
 A Definitions divider appears only on pages with both definitions and usages.
 With a bottom prompt, definitions stay nearest the prompt. Files with both
