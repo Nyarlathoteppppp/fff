@@ -63,14 +63,18 @@ pub(crate) fn prefilter_files<'a>(
 ) -> (Vec<&'a FileItem>, usize) {
     let max_file_size = options.max_file_size;
     let definition_only = options.classify_definitions == super::DefinitionMode::DefinitionOnly;
+    let candidate_count = bigram_candidates.map(BigramFilter::count_candidates);
     let plan = if constraints.is_empty() {
         None
     } else {
-        Some(ConstraintPlan::build(
+        // Sparse content candidates need only inline glob checks, not a full-index path pass.
+        let sparse = candidate_count.is_some_and(|count| count < files.len() / 2);
+        Some(ConstraintPlan::build_with_prefilter(
             constraints,
             files,
             arena,
             overflow_arena,
+            sparse,
         ))
     };
 
@@ -91,7 +95,7 @@ pub(crate) fn prefilter_files<'a>(
             let boundary = base_count.min(files.len());
             let (indexed, tail) = files.split_at(boundary);
 
-            let cap = BigramFilter::count_candidates(candidates) + tail.len();
+            let cap = candidate_count.unwrap_or(0) + tail.len();
             let mut out: Vec<&FileItem> = Vec::with_capacity(cap);
 
             let full_words = boundary / 64;
