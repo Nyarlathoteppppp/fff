@@ -1141,6 +1141,7 @@ export default function fffExtension(pi: ExtensionAPI) {
         stage = next;
         nativeCursor = null;
       }
+      if (stage === "definitions") result.items = exactDefinitionsFirst(result.items);
       let fuzzyNotice: string | null = null;
 
       // if we hit the timeout do not run the fuzzy fallback
@@ -1484,6 +1485,7 @@ export default function fffExtension(pi: ExtensionAPI) {
           result = fallback.value;
           stage = "references";
         }
+        if (stage === "definitions") result.items = exactDefinitionsFirst(result.items);
         let output = formatGrepOutput(result);
 
         const notices: string[] = [];
@@ -1717,6 +1719,34 @@ function nextGrepStage(stage: GrepStage): GrepStage | undefined {
   }
 }
 
+// Exact declarations lead each file, and files containing them lead the page.
+function exactDefinitionsFirst(items: GrepResult["items"]): GrepResult["items"] {
+  const encoder = new TextEncoder();
+  const exact = new Set<GrepResult["items"][number]>();
+  const files = new Map<string, { order: number; exact: boolean }>();
+  for (const item of items) {
+    let file = files.get(item.relativePath);
+    if (!file) {
+      file = { order: files.size, exact: false };
+      files.set(item.relativePath, file);
+    }
+    const line = encoder.encode(item.lineContent);
+    if (item.matchRanges.some(([start, end]) => declaresWord(line, start, end))) {
+      exact.add(item);
+      file.exact = true;
+    }
+  }
+  return [...items].sort((a, b) => {
+    const aFile = files.get(a.relativePath)!;
+    const bFile = files.get(b.relativePath)!;
+    return (
+      Number(!aFile.exact) - Number(!bFile.exact) ||
+      aFile.order - bFile.order ||
+      Number(!exact.has(a)) - Number(!exact.has(b))
+    );
+  });
+}
+
 function isFuzzyGrepStage(stage: GrepStage): boolean {
   return stage === "fuzzy_definitions" || stage === "fuzzy_matches";
 }
@@ -1732,4 +1762,23 @@ function grepStageNotice(stage: GrepStage): string | undefined {
     default:
       return undefined;
   }
+}
+
+// A whole word before any parameter, type or value list approximates the declared name.
+function declaresWord(line: Uint8Array, start: number, end: number): boolean {
+  if (start >= end || isWordByte(line[start - 1]) || isWordByte(line[end])) return false;
+  for (let i = 0; i < start; i++) {
+    const byte = line[i];
+    if (byte === 0x28 || byte === 0x3c || byte === 0x3d) return false;
+    if (byte === 0x3a && line[i - 1] !== 0x3a && line[i + 1] !== 0x3a) return false;
+  }
+  return true;
+}
+
+function isWordByte(byte: number | undefined): boolean {
+  if (byte === undefined) return false;
+  const lower = byte | 0x20;
+  return (
+    byte === 0x5f || (byte >= 0x30 && byte <= 0x39) || (lower >= 0x61 && lower <= 0x7a)
+  );
 }
