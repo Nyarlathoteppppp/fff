@@ -292,7 +292,8 @@ describe('programmatic search APIs', function()
     after_each(function()
       pcall(fff_rust.stop_background_monitor)
       pcall(fff_rust.cleanup_file_picker)
-      vim.fn.delete(sandbox_root, 'rf')
+      if sandbox_root then vim.fn.delete(sandbox_root, 'rf') end
+      sandbox_root = nil
       file_picker.state.initialized = saved_initialized
       vim.g.fff = nil
     end)
@@ -314,6 +315,9 @@ describe('programmatic search APIs', function()
       local fd = assert(io.open(sandbox_root .. '/grep_target.lua', 'w'))
       fd:write('-- ' .. marker .. '\n')
       fd:close()
+
+      -- same lazy windows metadata cache race as the cwd switching grep test
+      if vim.fn.has('win32') == 1 then vim.wait(250, function() return false end) end
 
       local result, errors = capture_errors(function() return fff.content_search(marker, { cwd = sandbox_root }) end)
       assert.are.same({}, errors)
