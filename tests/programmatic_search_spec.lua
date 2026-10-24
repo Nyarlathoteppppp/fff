@@ -319,7 +319,7 @@ describe('programmatic search APIs', function()
       assert.are.same({}, errors)
       -- same index lag after mkdir as the cwd switching grep test
       vim.wait(10000, function()
-        if #result.items == 0 then result = fff.content_search(marker) end
+        if #result.items == 0 then result = fff.content_search(marker, { cwd = sandbox_root }) end
         return #result.items > 0
       end, 50)
       assert.is_true(#result.items > 0, 'cwd switch did not surface match from the new root')
